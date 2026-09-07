@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MARKETING_PERMISSION_ATTESTATION_STATEMENT,
+  createDoubleOptInPermissionEvidence,
   createImportAttestationEvidence,
   createSiteFormPermissionEvidence,
   evaluateCampaignAudience,
@@ -96,6 +97,24 @@ describe("campaign permission evidence", () => {
       pageId: "page-1",
       actionId: null,
       campaign: "launch",
+    });
+  });
+
+  it("records both halves of double opt-in", () => {
+    expect(JSON.parse(createDoubleOptInPermissionEvidence({
+      requestedAt: "2026-09-03T10:00:00.000Z",
+      confirmedAt: "2026-09-03T10:05:00.000Z",
+      actionId: "footer",
+    }))).toEqual({
+      version: 1,
+      kind: "site_form",
+      source: "me3",
+      method: "double_opt_in",
+      requestedAt: "2026-09-03T10:00:00.000Z",
+      confirmedAt: "2026-09-03T10:05:00.000Z",
+      pageId: null,
+      actionId: "footer",
+      campaign: null,
     });
   });
 

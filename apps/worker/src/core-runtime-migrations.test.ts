@@ -38,6 +38,9 @@ describe("Core runtime migrations", () => {
     expect(db.columns.get("subscribers")?.has("marketing_permission_evidence_json")).toBe(true);
     expect(db.columns.get("subscribers")?.has("delivery_status")).toBe(true);
     expect(db.columns.get("subscribers")?.has("delivery_status_changed_at")).toBe(true);
+    expect(db.columns.get("subscribers")?.has("confirmation_token_hash")).toBe(true);
+    expect(db.columns.get("subscribers")?.has("confirmation_expires_at")).toBe(true);
+    expect(db.columns.get("subscribers")?.has("confirmation_requested_at")).toBe(true);
     expect(db.tables.has("email_campaigns")).toBe(true);
     expect(db.tables.has("email_campaign_revisions")).toBe(true);
     expect(db.tables.has("email_campaign_audience_snapshots")).toBe(true);
@@ -192,6 +195,9 @@ describe("Core runtime migrations", () => {
     expect(db.migrations.get("0046_business_site_profile_ownership")).toBe(
       "2026-08-31-business-site-profile-ownership-v1",
     );
+    expect(db.migrations.get("0047_subscriber_double_opt_in")).toBe(
+      "2026-09-03-subscriber-double-opt-in-v1",
+    );
     expect(
       db.statements.some(
         (sql) => sql.includes("UPDATE mission_tasks") && sql.includes("status = 'backlog'") &&
@@ -285,6 +291,7 @@ describe("Core runtime migrations", () => {
       hasJournalEntryRevision: true,
       hasSiteRole: true,
       hasCampaignFoundations: true,
+      hasSubscriberDoubleOptIn: true,
     });
 
     await ensureCoreRuntimeMigrations({ DB: db as unknown as D1Database } as Env);
@@ -345,6 +352,7 @@ type RuntimeMigrationDbOptions = {
   hasJournalEntryRevision?: boolean;
   hasSiteRole?: boolean;
   hasCampaignFoundations?: boolean;
+  hasSubscriberDoubleOptIn?: boolean;
   addFinancialProjectColumnBeforeAlterError?: boolean;
   failFinancialProjectAlterOnce?: boolean;
 };
@@ -474,6 +482,15 @@ class RuntimeMigrationDb {
         "marketing_permission_evidence_json",
         "delivery_status",
         "delivery_status_changed_at",
+      ]) {
+        this.columns.get("subscribers")?.add(column);
+      }
+    }
+    if (options.hasSubscriberDoubleOptIn) {
+      for (const column of [
+        "confirmation_token_hash",
+        "confirmation_expires_at",
+        "confirmation_requested_at",
       ]) {
         this.columns.get("subscribers")?.add(column);
       }

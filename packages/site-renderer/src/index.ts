@@ -149,7 +149,12 @@ export type Me3SiteProfile = {
     primaryOutcome?: string;
   };
   intents?: {
-    subscribe?: { enabled?: boolean; title?: string; description?: string };
+    subscribe?: {
+      enabled?: boolean;
+      title?: string;
+      description?: string;
+      doubleOptIn?: boolean;
+    };
     book?: {
       enabled?: boolean;
       title?: string;
@@ -1368,7 +1373,10 @@ function generateNewsletter(
   if (!username) return "";
   const action = `/api/sites/${encodeURIComponent(username)}/subscribe`;
   const id = options.embedded ? "" : ' id="newsletter"';
-  return `<section class="newsletter"${id}><h2 class="newsletter-title">${escapeHtml(subscribe.title || "Newsletter")}</h2>${description}<form class="newsletter-form" data-newsletter-form action="${escapeHtml(action)}" method="POST"><input type="email" name="email" autocomplete="email" inputmode="email" placeholder="Enter your email" required aria-label="Email address"><label class="newsletter-honeypot" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label><button type="submit">Subscribe</button></form><p class="newsletter-status" role="status" aria-live="polite"></p><p class="newsletter-privacy">No spam. Unsubscribe anytime.</p><script>(function(){var script=document.currentScript;var root=script&&script.parentElement;var form=root&&root.querySelector('[data-newsletter-form]');var statusEl=root&&root.querySelector('.newsletter-status');if(!form||!statusEl)return;form.addEventListener('submit',async function(event){event.preventDefault();var button=form.querySelector('button[type=submit]');var originalLabel=button?button.textContent:'Subscribe';statusEl.classList.remove('is-error');statusEl.textContent='Joining…';if(button){button.disabled=true;button.textContent='Joining…';}try{var response=await fetch(form.action,{method:'POST',headers:{Accept:'application/json'},body:new FormData(form)});var data={};try{data=await response.json();}catch(_error){}if(!response.ok)throw new Error(data.error||'Could not subscribe right now.');form.reset();statusEl.textContent=data.message||'You’re subscribed.';}catch(error){statusEl.classList.add('is-error');statusEl.textContent=error&&error.message?error.message:'Could not subscribe right now.';}finally{if(button){button.disabled=false;button.textContent=originalLabel;}}});})();</script></section>`;
+  const privacy = subscribe.doubleOptIn
+    ? "Confirm by email. Unsubscribe anytime."
+    : "No spam. Unsubscribe anytime.";
+  return `<section class="newsletter"${id}><h2 class="newsletter-title">${escapeHtml(subscribe.title || "Newsletter")}</h2>${description}<form class="newsletter-form" data-newsletter-form action="${escapeHtml(action)}" method="POST"><input type="email" name="email" autocomplete="email" inputmode="email" placeholder="Enter your email" required aria-label="Email address"><label class="newsletter-honeypot" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label><button type="submit">Subscribe</button></form><p class="newsletter-status" role="status" aria-live="polite"></p><p class="newsletter-privacy">${privacy}</p><script>(function(){var script=document.currentScript;var root=script&&script.parentElement;var form=root&&root.querySelector('[data-newsletter-form]');var statusEl=root&&root.querySelector('.newsletter-status');if(!form||!statusEl)return;form.addEventListener('submit',async function(event){event.preventDefault();var button=form.querySelector('button[type=submit]');var originalLabel=button?button.textContent:'Subscribe';statusEl.classList.remove('is-error');statusEl.textContent='Joining…';if(button){button.disabled=true;button.textContent='Joining…';}try{var response=await fetch(form.action,{method:'POST',headers:{Accept:'application/json'},body:new FormData(form)});var data={};try{data=await response.json();}catch(_error){}if(!response.ok)throw new Error(data.error||'Could not subscribe right now.');form.reset();statusEl.textContent=data.message||'Thanks.';}catch(error){statusEl.classList.add('is-error');statusEl.textContent=error&&error.message?error.message:'Could not subscribe right now.';}finally{if(button){button.disabled=false;button.textContent=originalLabel;}}});})();</script></section>`;
 }
 
 function generateFooter(profile: Me3SiteProfile, allowCustom: boolean): string {

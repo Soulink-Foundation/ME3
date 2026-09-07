@@ -7,7 +7,7 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const coreMetadataPath = path.join(rootDir, "me3-core.json");
 const packageJsonPath = path.join(rootDir, "package.json");
 const defaultManifestUrl =
-  "https://raw.githubusercontent.com/soulinkfoundation/ME3/main/updates/stable.json";
+  "https://raw.githubusercontent.com/soulinkfoundation/me3-core/main/updates/stable.json";
 
 const args = parseArgs(process.argv.slice(2));
 const coreMetadata = await loadInstalledCoreMetadata();

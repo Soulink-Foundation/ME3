@@ -38,7 +38,7 @@ export async function sendManagedUpgradeWorkflowCallback(
     !secret ||
     !/^[1-9][0-9]{0,19}$/.test(workflowRunId || "") ||
     workflowServerUrl !== "https://github.com" ||
-    workflowRepository !== "soulinkfoundation/ME3" ||
+    workflowRepository !== "soulinkfoundation/me3-core" ||
     !STATUSES.has(status) ||
     !STAGES.has(stage) ||
     (errorCode && !ERROR_CODES.has(errorCode)) ||

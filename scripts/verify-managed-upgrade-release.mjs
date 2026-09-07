@@ -26,7 +26,7 @@ export function verifyManagedUpgradeRelease({
     metadata?.releaseChannel !== "stable" ||
     metadata?.version !== tag.slice(1) ||
     metadata?.releaseNotesUrl !==
-      `https://github.com/soulinkfoundation/ME3/releases/tag/${tag}`
+      `https://github.com/soulinkfoundation/me3-core/releases/tag/${tag}`
   ) {
     throw new Error("managed upgrade release metadata is invalid");
   }

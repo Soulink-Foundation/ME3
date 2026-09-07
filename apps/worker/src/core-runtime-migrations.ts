@@ -206,6 +206,11 @@ const runtimeMigrations: RuntimeMigration[] = [
     checksum: "2026-08-31-business-site-profile-ownership-v1",
     apply: applyBusinessSiteProfileOwnershipMigration,
   },
+  {
+    id: "0047_subscriber_double_opt_in",
+    checksum: "2026-09-03-subscriber-double-opt-in-v1",
+    apply: applySubscriberDoubleOptInMigration,
+  },
 ];
 
 let migrationPromise: Promise<void> | null = null;
@@ -2669,6 +2674,23 @@ async function applyEmailCampaignFoundationsMigration(db: D1Database): Promise<v
     await db.batch(statements);
   } else {
     for (const statement of statements) await statement.run();
+  }
+}
+
+async function applySubscriberDoubleOptInMigration(
+  db: D1Database,
+): Promise<void> {
+  if (!(await tableExists(db, "subscribers"))) {
+    throw new Error(
+      "Cannot apply 0047_subscriber_double_opt_in: subscribers is missing",
+    );
+  }
+  for (const columnName of [
+    "confirmation_token_hash",
+    "confirmation_expires_at",
+    "confirmation_requested_at",
+  ]) {
+    await addColumnIfMissing(db, "subscribers", columnName, "TEXT");
   }
 }
 

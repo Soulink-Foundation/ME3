@@ -595,6 +595,21 @@ describe("site generator", () => {
     expect(unbrandedFiles["index.html"]).not.toContain("favicon.png");
   });
 
+  it("tells visitors when newsletter confirmation is required", async () => {
+    const files = await generateSiteHtml(
+      {
+        name: "Confirmed Newsletter",
+        handle: "confirmed-newsletter",
+        intents: {
+          subscribe: { enabled: true, doubleOptIn: true },
+        },
+      },
+      [],
+    );
+
+    expect(files["index.html"]).toContain("Confirm by email. Unsubscribe anytime.");
+  });
+
   it("confirms pay-separately bookings without checkout and keeps instructions private", async () => {
     const files = await generateSiteHtml(
       {

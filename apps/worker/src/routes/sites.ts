@@ -59,6 +59,7 @@ import {
   createEmptyPublishManifest,
   deleteSiteFile,
   escapeCsv,
+  escapeHtml,
   findHeaderIndex,
   getContentType,
   getSiteContentAssetUploadMetadata,
@@ -142,6 +143,11 @@ import {
   createSiteFormPermissionEvidence,
 } from "../campaign-audience";
 import { listLatestSiteBuilderThreads } from "../site-builder-threads";
+import {
+  confirmDoubleOptInSubscriber,
+  getDoubleOptInConfirmationStatus,
+  requestDoubleOptInSubscription,
+} from "../subscriber-confirmations";
 
 type LandingPageGenerateBody = {
   username?: string;
@@ -394,14 +400,52 @@ export function registerSiteRoutes(app: AppHono, deps: OwnerRouteDeps) {
       const normalizedEmail = email.toLowerCase().trim();
       if (!EMAIL_REGEX.test(normalizedEmail)) return c.json({ error: "Invalid email address" }, 400);
 
+      const clientIp = c.req.header("cf-connecting-ip") || c.req.header("x-forwarded-for");
+      const ipHash = clientIp ? await hashSubscriberIdentifier(clientIp) : null;
+      const profileJson =
+        (await getSiteFileText(c.env, site.id, "src/me.json")) ||
+        (await getSiteFileText(c.env, site.id, "public/me.json"));
+      const profile = profileJson ? parseSiteProfile(profileJson, site.username) : null;
+      const subscribe = profile?.intents?.subscribe;
+
+      if (subscribe?.doubleOptIn === true) {
+        const origin =
+          getPublicSiteOrigin(c.env, {
+            custom_domain:
+              site.custom_domain_status === "active" ? site.custom_domain : null,
+          }) || new URL(c.req.url).origin;
+        const result = await requestDoubleOptInSubscription(c.env, {
+          site,
+          email: normalizedEmail,
+          firstName: normalizeNullableText(firstName),
+          lastName: normalizeNullableText(lastName),
+          ipHash,
+          pageId: normalizeNullableText(pageId),
+          actionId: normalizeNullableText(actionId),
+          campaign: normalizeNullableText(campaign),
+          confirmationOrigin: origin,
+          siteName: profile?.name?.trim() || site.username,
+          newsletterName:
+            subscribe.title?.trim() || profile?.name?.trim() || site.username,
+        });
+        if (result === "unavailable") {
+          return c.json(
+            { error: "Email confirmation is unavailable right now. Please try again later." },
+            503,
+          );
+        }
+        return c.json({
+          ok: true,
+          message: "Thanks. If confirmation is needed, check your inbox.",
+        });
+      }
+
       const permissionEvidence = createSiteFormPermissionEvidence({
         pageId: normalizeNullableText(pageId),
         actionId: normalizeNullableText(actionId),
         campaign: normalizeNullableText(campaign),
       });
 
-      const clientIp = c.req.header("cf-connecting-ip") || c.req.header("x-forwarded-for");
-      const ipHash = clientIp ? await hashSubscriberIdentifier(clientIp) : null;
       const existing = await c.env.DB.prepare(
         `SELECT id, unsubscribed_at, marketing_status
          FROM subscribers WHERE site_id = ? AND email = ?`,
@@ -469,6 +513,45 @@ export function registerSiteRoutes(app: AppHono, deps: OwnerRouteDeps) {
       if (isMissingSubscribersTableError(error)) return subscribersSetupRequired(c);
       console.error("Subscribe error:", error);
       return c.json({ error: "Failed to subscribe" }, 500);
+    }
+  });
+
+  app.on(["GET", "POST"], "/api/sites/:username/subscribe/confirm", async (c) => {
+    const site = await getSiteByUsername(c.env, c.req.param("username"));
+    if (!site) return confirmationHtml("Site not found", "This confirmation link is invalid.", 404);
+
+    const isPost = c.req.method === "POST";
+    const form = isPost ? await c.req.formData().catch(() => null) : null;
+    const email = (isPost ? form?.get("email")?.toString() : c.req.query("email"))?.toLowerCase().trim() || "";
+    const token = (isPost ? form?.get("token")?.toString() : c.req.query("token")) || "";
+    if (!EMAIL_REGEX.test(email) || !token) {
+      return confirmationHtml("Invalid confirmation link", "This link is invalid or expired.", 400);
+    }
+
+    try {
+      const input = { siteId: site.id, email, token };
+      // Link previews may GET this page; only the reader's form submission grants permission.
+      const status = isPost
+        ? await confirmDoubleOptInSubscriber(c.env, input)
+        : await getDoubleOptInConfirmationStatus(c.env, input);
+      if (status === "confirmed") {
+        return confirmationHtml("Subscription confirmed", "You're subscribed and can close this page.");
+      }
+      if (status !== "ready") {
+        return confirmationHtml("Invalid confirmation link", "This link is invalid or expired.", 400);
+      }
+      return confirmationHtml(
+        "Confirm your subscription",
+        `Confirm that ${email} should receive this newsletter.`,
+        200,
+        { username: site.username, email, token },
+      );
+    } catch (error) {
+      if (isMissingSubscribersTableError(error)) {
+        return confirmationHtml("Setup required", "Subscriber storage is not ready yet.", 503);
+      }
+      console.error("Subscription confirmation error:", error);
+      return confirmationHtml("Something went wrong", "Please try again later.", 500);
     }
   });
 
@@ -2113,6 +2196,21 @@ function normalizePositiveInteger(value: unknown, fallback: number): number {
   const numberValue = Number(value);
   if (!Number.isFinite(numberValue) || numberValue <= 0) return fallback;
   return Math.round(numberValue);
+}
+
+function confirmationHtml(
+  title: string,
+  body: string,
+  status = 200,
+  form?: { username: string; email: string; token: string },
+): Response {
+  const confirmationForm = form
+    ? `<form method="post" action="/api/sites/${encodeURIComponent(form.username)}/subscribe/confirm"><input type="hidden" name="email" value="${escapeHtml(form.email)}"><input type="hidden" name="token" value="${escapeHtml(form.token)}"><button type="submit" style="font:inherit;padding:12px 18px;border:0;border-radius:8px;background:#111;color:#fff;cursor:pointer;">Confirm subscription</button></form>`
+    : "";
+  return new Response(
+    `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title></head><body style="font-family:system-ui;padding:40px;text-align:center;"><main style="max-width:520px;margin:0 auto;"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(body)}</p>${confirmationForm}</main></body></html>`,
+    { status, headers: { "Content-Type": "text/html; charset=utf-8" } },
+  );
 }
 
 function sitePageErrorResponse(c: AppContext, error: unknown) {

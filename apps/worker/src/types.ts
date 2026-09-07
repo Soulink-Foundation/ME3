@@ -181,6 +181,9 @@ export interface DbSubscriber {
   subscribed_at: string;
   unsubscribed_at: string | null;
   ip_hash: string | null;
+  confirmation_token_hash: string | null;
+  confirmation_expires_at: string | null;
+  confirmation_requested_at: string | null;
   page_id?: string | null;
   action_id?: string | null;
   campaign?: string | null;

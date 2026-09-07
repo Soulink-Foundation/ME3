@@ -119,6 +119,7 @@ export interface WizardNewsletterConfig {
   enabled: boolean;
   title: string;
   description: string;
+  doubleOptIn: boolean;
 }
 
 export interface WizardBookingPricing {
@@ -1424,6 +1425,7 @@ const defaultProfile: WizardProfile = {
     enabled: true,
     title: "",
     description: "",
+    doubleOptIn: true,
   },
   booking: normalizeWizardBookingConfig({
     enabled: true,
@@ -3481,6 +3483,7 @@ export const useWizardStore = defineStore("wizard", () => {
       if (profile.value.newsletter.description.trim()) {
         subscribe.description = profile.value.newsletter.description.trim();
       }
+      subscribe.doubleOptIn = profile.value.newsletter.doubleOptIn;
 
       intents.subscribe = subscribe;
     }
@@ -4044,6 +4047,10 @@ export const useWizardStore = defineStore("wizard", () => {
           newsletter: {
             ...defaultProfile.newsletter,
             ...(storedProfile.newsletter || {}),
+            doubleOptIn:
+              storedProfile.newsletter
+                ? storedProfile.newsletter.doubleOptIn === true
+                : defaultProfile.newsletter.doubleOptIn,
           },
           gift: {
             ...defaultProfile.gift,
@@ -4495,6 +4502,7 @@ export const useWizardStore = defineStore("wizard", () => {
           enabled?: boolean;
           title?: string;
           description?: string;
+          doubleOptIn?: boolean;
         };
         book?: {
           enabled?: boolean;
@@ -4654,6 +4662,7 @@ export const useWizardStore = defineStore("wizard", () => {
           enabled: true,
           title: rawIntents.subscribe.title || "",
           description: rawIntents.subscribe.description || "",
+          doubleOptIn: rawIntents.subscribe.doubleOptIn === true,
         }
       : { ...defaultProfile.newsletter, enabled: false };
 

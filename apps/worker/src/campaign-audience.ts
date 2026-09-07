@@ -126,6 +126,26 @@ export function createSiteFormPermissionEvidence(input: {
   });
 }
 
+export function createDoubleOptInPermissionEvidence(input: {
+  requestedAt: string;
+  confirmedAt: string;
+  pageId?: string | null;
+  actionId?: string | null;
+  campaign?: string | null;
+}): string {
+  return JSON.stringify({
+    version: 1,
+    kind: "site_form",
+    source: "me3",
+    method: "double_opt_in",
+    requestedAt: input.requestedAt,
+    confirmedAt: input.confirmedAt,
+    pageId: input.pageId || null,
+    actionId: input.actionId || null,
+    campaign: input.campaign || null,
+  });
+}
+
 export function createImportAttestationEvidence(input: {
   attestedAt: string;
   source: string;

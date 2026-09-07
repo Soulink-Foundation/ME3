@@ -10,7 +10,7 @@ const env = {
   ME3_MANAGED_UPGRADE_CALLBACK_SECRET: "upgrade-callback-secret",
   GITHUB_RUN_ID: "123456789",
   GITHUB_SERVER_URL: "https://github.com",
-  GITHUB_REPOSITORY: "soulinkfoundation/ME3",
+  GITHUB_REPOSITORY: "soulinkfoundation/me3-core",
   ME3_MANAGED_ATTEMPT_ID: "11111111-1111-4111-8111-111111111111",
   ME3_MANAGED_INSTALLATION_ID: installationId,
   ME3_MANAGED_CURRENT_RELEASE_TAG: "v0.1.108",
@@ -55,7 +55,7 @@ test("reports attempt-correlated progress without claiming completion", async ()
   assert.equal(payload.workflowRunId, "123456789");
   assert.equal(
     payload.workflowUrl,
-    "https://github.com/soulinkfoundation/ME3/actions/runs/123456789",
+    "https://github.com/soulinkfoundation/me3-core/actions/runs/123456789",
   );
   assert.equal(Object.hasOwn(payload, "observedReleaseTag"), false);
   assert.equal(Object.hasOwn(payload, "resourceManifest"), false);

@@ -15,7 +15,7 @@
 1. Create a free Cloudflare account.
 2. Click here 👇
 <p>
-  <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/soulinkfoundation/ME3">
+  <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/soulinkfoundation/me3-core">
     <img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare" />
   </a>
 </p>

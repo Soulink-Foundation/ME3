@@ -1423,6 +1423,7 @@ describe("wizard store", () => {
       expect(store.profile.newsletter.enabled).toBe(true);
       expect(store.profile.newsletter.title).toBe("");
       expect(store.profile.newsletter.description).toBe("");
+      expect(store.profile.newsletter.doubleOptIn).toBe(true);
     });
 
     it("should set newsletter config", () => {
@@ -1437,6 +1438,9 @@ describe("wizard store", () => {
       expect(store.profile.newsletter.description).toBe(
         "Subscribe for updates",
       );
+
+      store.setNewsletter({ doubleOptIn: false });
+      expect(store.profile.newsletter.doubleOptIn).toBe(false);
     });
 
     it("should update newsletter config partially", () => {
@@ -1462,6 +1466,7 @@ describe("wizard store", () => {
       expect(me3.intents?.subscribe?.enabled).toBe(true);
       expect(me3.intents?.subscribe?.title).toBe("My Newsletter");
       expect(me3.intents?.subscribe?.description).toBe("Weekly updates");
+      expect(me3.intents?.subscribe?.doubleOptIn).toBe(true);
       expect((me3 as any).actions?.subscribe).toEqual({
         method: "POST",
         url: "http://localhost:3000/api/sites/testuser/subscribe",
@@ -1503,6 +1508,7 @@ describe("wizard store", () => {
             enabled: true,
             title: "Newsletter Title",
             description: "Newsletter Description",
+            doubleOptIn: true,
           },
         },
       };
@@ -1513,6 +1519,18 @@ describe("wizard store", () => {
       expect(store.profile.newsletter.description).toBe(
         "Newsletter Description",
       );
+      expect(store.profile.newsletter.doubleOptIn).toBe(true);
+    });
+
+    it("keeps existing newsletter sites on single opt-in until enabled", () => {
+      const store = useWizardStore();
+
+      store.loadFromSiteContent({
+        name: "Existing Site",
+        intents: { subscribe: { enabled: true } },
+      }, [], [], [], "existing-site");
+
+      expect(store.profile.newsletter.doubleOptIn).toBe(false);
     });
 
     it("should use default newsletter config when not in site content", () => {

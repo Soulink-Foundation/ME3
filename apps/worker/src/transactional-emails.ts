@@ -57,6 +57,45 @@ export type ProductPaymentInstructionsEmailDetails = {
   messageText?: string | null;
 };
 
+export type NewsletterSubscriptionConfirmationEmailDetails = {
+  ownerId: string;
+  siteId: string;
+  siteName: string;
+  newsletterName: string;
+  subscriberEmail: string;
+  confirmationUrl: string;
+};
+
+export async function sendNewsletterSubscriptionConfirmationEmail(
+  env: Env,
+  details: NewsletterSubscriptionConfirmationEmailDetails,
+): Promise<TransactionalEmailResult> {
+  const subject = `Confirm your subscription to ${details.newsletterName}`;
+  const textBody = `Confirm that you want to receive emails from ${details.newsletterName}:
+
+${details.confirmationUrl}
+
+If you did not request this, you can ignore this email.`;
+  const htmlBody = emailShell(`
+    <h1 style="margin:0 0 8px;font-size:24px;color:#111;">Confirm your subscription</h1>
+    <p style="margin:0 0 24px;color:#666;font-size:14px;line-height:1.6;">Confirm that you want to receive emails from ${escapeHtml(details.newsletterName)}.</p>
+    <p style="margin:0 0 24px;"><a href="${escapeHtml(details.confirmationUrl)}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;border-radius:8px;padding:12px 18px;font-size:14px;font-weight:700;">Confirm subscription</a></p>
+    <p style="margin:0;color:#666;font-size:13px;line-height:1.6;">If you did not request this, you can ignore this email.</p>
+  `);
+
+  return sendWorkflowEmail(env, details.ownerId, {
+    toAddress: details.subscriberEmail,
+    subject,
+    textBody,
+    htmlBody,
+    fromName: details.siteName,
+    metadata: {
+      site_id: details.siteId,
+      newsletter_email: "subscription_confirmation",
+    },
+  });
+}
+
 export async function sendBookingConfirmationEmails(
   env: Env,
   details: BookingEmailDetails,

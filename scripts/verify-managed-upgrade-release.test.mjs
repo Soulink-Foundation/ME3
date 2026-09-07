@@ -15,7 +15,7 @@ test("pins a stable tag to its immutable commit and matching Core metadata", () 
       version: "0.1.109",
       releaseChannel: "stable",
       releaseNotesUrl:
-        "https://github.com/soulinkfoundation/ME3/releases/tag/v0.1.109",
+        "https://github.com/soulinkfoundation/me3-core/releases/tag/v0.1.109",
     }),
   );
   const sha = "a".repeat(40);
