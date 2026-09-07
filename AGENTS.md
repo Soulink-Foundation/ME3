@@ -11,7 +11,7 @@
 ## Ecosystem Source Of Truth
 
 - Canonical high-level ecosystem docs live at `/Users/kieranbutler/Coding/docs`.
-- Read `/Users/kieranbutler/Coding/docs/README.md` and `/Users/kieranbutler/Coding/docs/projects/me3.md` before strategic or cross-app work.
+- Read `/Users/kieranbutler/Coding/docs/README.md` and `/Users/kieranbutler/Coding/docs/projects/me3-core.md` before strategic or cross-app work.
 - Shared UI guidance lives at `/Users/kieranbutler/Coding/docs/design-system/README.md`.
 - Durable architecture belongs in the shared docs. Actionable plans, acceptance criteria, and execution history belong in beads.
 
