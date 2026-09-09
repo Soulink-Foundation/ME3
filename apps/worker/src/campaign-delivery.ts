@@ -16,7 +16,7 @@ import {
   type CampaignAddOnPlanKey,
   type CampaignAddOnStatus,
 } from "@me3-core/plugin-email-campaigns";
-import { evaluateCampaignAudience } from "./campaign-audience";
+import { evaluateCampaignAudience, type CampaignAudienceSubscriber } from "./campaign-audience";
 import {
   CampaignInputError,
   getOwnedCampaign,
@@ -31,6 +31,7 @@ const CORE_INSTALL_ID_SECRET = "ME3_CORE_INSTALL_ID";
 const CORE_UPDATE_TOKEN_SECRET = "ME3_CLOUD_CORE_TOKEN";
 const CALLBACK_SECRET = "ME3_MANAGED_CAMPAIGN_CALLBACK_SECRET";
 const MAX_DISPATCH_BATCH = 20;
+export const CAMPAIGN_DISPATCH_CRON = "* * * * *";
 const CALLBACK_MAX_CLOCK_SKEW_SECONDS = 300;
 
 export type CampaignTransportStatus = {
@@ -427,6 +428,12 @@ export async function dispatchDueCampaignJobs(
   limit = MAX_DISPATCH_BATCH,
 ) {
   if (!isManagedRuntime(env)) return { processed: 0, paused: 0 };
+  const pending = await env.DB.prepare(
+    `SELECT 1 AS pending FROM email_campaign_recipient_jobs
+     WHERE status IN ('queued', 'retry_wait', 'paused', 'submitting',
+                      'delivery_unknown', 'unresolved') LIMIT 1`,
+  ).first<{ pending: number }>();
+  if (!pending) return { processed: 0, paused: 0 };
   const transport = await getCampaignTransportStatus(env, fetcher);
   const dueAt = new Date().toISOString();
   if (!transport.ready || !transport.sender) {
@@ -454,6 +461,12 @@ export async function dispatchDueCampaignJobs(
   const due = await env.DB.prepare(
     `SELECT id FROM email_campaign_recipient_jobs
      WHERE status IN ('queued', 'retry_wait') AND next_attempt_at <= ?
+       AND (kind = 'test' OR EXISTS (
+         SELECT 1 FROM email_campaigns campaign
+         WHERE campaign.id = email_campaign_recipient_jobs.campaign_id
+           AND campaign.status IN ('scheduled', 'sending')
+           AND campaign.audience_snapshot_id = email_campaign_recipient_jobs.audience_snapshot_id
+       ))
      ORDER BY next_attempt_at, created_at LIMIT ?`,
   )
     .bind(dueAt, Math.max(1, Math.min(MAX_DISPATCH_BATCH, Math.floor(limit))))
@@ -682,7 +695,13 @@ async function dispatchCampaignJob(
     `UPDATE email_campaign_recipient_jobs
      SET status = 'submitting', attempt_count = attempt_count + 1,
          updated_at = CURRENT_TIMESTAMP
-     WHERE id = ? AND status IN ('queued', 'retry_wait')`,
+     WHERE id = ? AND status IN ('queued', 'retry_wait')
+       AND (kind = 'test' OR EXISTS (
+         SELECT 1 FROM email_campaigns campaign
+         WHERE campaign.id = email_campaign_recipient_jobs.campaign_id
+           AND campaign.status IN ('scheduled', 'sending')
+           AND campaign.audience_snapshot_id = email_campaign_recipient_jobs.audience_snapshot_id
+       ))`,
   )
     .bind(jobId)
     .run();
@@ -690,6 +709,20 @@ async function dispatchCampaignJob(
   const job = await loadCampaignJobForDispatch(env, jobId);
   if (!job) return false;
   if (job.kind === "campaign") {
+    // A scheduled snapshot is immutable, but permission can be revoked before delivery.
+    const subscriber = await env.DB.prepare(
+      `SELECT subscriber.* FROM subscribers subscriber
+       JOIN email_campaign_audience_members member ON member.subscriber_id = subscriber.id
+       JOIN email_campaigns campaign ON campaign.id = ? AND campaign.site_id = subscriber.site_id
+       WHERE member.id = ?`,
+    ).bind(job.campaign_id, job.audience_member_id).first<CampaignAudienceSubscriber>();
+    const eligible = subscriber ? evaluateCampaignAudience([subscriber]).eligible[0] : null;
+    if (!eligible || eligible.normalizedEmail !== job.recipient_email) {
+      const now = new Date().toISOString();
+      await updateJob(env, job.id, "cancelled", "recipient_no_longer_eligible", now, now);
+      await refreshCampaignStatus(env, job.campaign_id);
+      return true;
+    }
     await env.DB.prepare(
       `UPDATE email_campaigns SET status = 'sending', updated_at = CURRENT_TIMESTAMP
        WHERE id = ? AND status = 'scheduled'`,
@@ -805,7 +838,7 @@ async function applySubmissionResult(
     await env.DB.prepare(
       `UPDATE email_campaign_recipient_jobs
        SET status = 'retry_wait', provider_reason = ?, next_attempt_at = ?,
-           updated_at = ? WHERE id = ?`,
+           updated_at = ? WHERE id = ? AND status = 'submitting'`,
     )
       .bind(result.reason, nextAttempt, now, job.id)
       .run();
@@ -819,7 +852,7 @@ async function applySubmissionResult(
     await env.DB.prepare(
       `UPDATE email_campaign_recipient_jobs
        SET status = 'retry_wait', provider_reason = 'in_progress',
-           next_attempt_at = ?, updated_at = ? WHERE id = ?`,
+           next_attempt_at = ?, updated_at = ? WHERE id = ? AND status = 'submitting'`,
     )
       .bind(new Date(Date.now() + 30_000).toISOString(), now, job.id)
       .run();
@@ -930,7 +963,7 @@ async function refreshCampaignStatus(env: Env, campaignId: string) {
   )
     .bind(campaignId)
     .first<{ status: string; scheduled_for: string | null }>();
-  if (!campaign || campaign.status === "cancelled") return;
+  if (!campaign || campaign.status === "cancelled" || campaign.status === "draft") return;
   const counts = await env.DB.prepare(
     `SELECT status, COUNT(*) AS count FROM email_campaign_recipient_jobs
      WHERE campaign_id = ? AND kind = 'campaign' GROUP BY status`,
@@ -1243,7 +1276,9 @@ async function updateJob(
   await env.DB.prepare(
     `UPDATE email_campaign_recipient_jobs
      SET status = ?, provider_reason = ?, accepted_at = COALESCE(?, accepted_at),
-         terminal_at = COALESCE(?, terminal_at), updated_at = ? WHERE id = ?`,
+         terminal_at = COALESCE(?, terminal_at), updated_at = ? WHERE id = ?
+       AND status NOT IN ('delivered', 'bounced', 'complained', 'suppressed',
+                          'rejected', 'failed', 'cancelled')`,
   )
     .bind(status, reason, acceptedAt, terminalAt, updatedAt, jobId)
     .run();
@@ -1253,7 +1288,7 @@ async function pauseJob(env: Env, jobId: string, reason: string) {
   await env.DB.prepare(
     `UPDATE email_campaign_recipient_jobs
      SET status = 'paused', provider_reason = ?, updated_at = CURRENT_TIMESTAMP
-     WHERE id = ?`,
+     WHERE id = ? AND status = 'submitting'`,
   )
     .bind(reason, jobId)
     .run();
@@ -1263,7 +1298,7 @@ async function markJobUnknown(env: Env, jobId: string, reason: string) {
   await env.DB.prepare(
     `UPDATE email_campaign_recipient_jobs
      SET status = 'delivery_unknown', provider_reason = ?,
-         updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+         updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'submitting'`,
   )
     .bind(reason, jobId)
     .run();

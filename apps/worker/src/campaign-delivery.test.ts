@@ -8,6 +8,7 @@ import {
 } from "../../../shared/managed-campaign-contract";
 import {
   applyManagedCampaignEvent,
+  cancelCampaignDelivery,
   dispatchDueCampaignJobs,
   getCampaignTransportStatus,
   sendCampaignTest,
@@ -263,6 +264,86 @@ describe("campaign delivery lifecycle", () => {
         "SELECT COUNT(*) AS count FROM email_campaign_audience_snapshots",
       ).get(),
     ).toEqual({ count: 0 });
+    await expect(getCampaign(env, "owner", campaignId)).resolves.toMatchObject({
+      status: "draft",
+    });
+    const current = await getCampaign(env, "owner", campaignId);
+    await expect(saveCampaignDraft(env, "owner", campaignId, {
+      subject: "Edited after a test",
+      document: current!.revision.document,
+    })).resolves.toMatchObject({ status: "draft" });
+  });
+
+  it.each([
+    "unsubscribed_at = CURRENT_TIMESTAMP",
+    "delivery_status = 'suppressed'",
+    "marketing_status = 'pending'",
+    "email = 'changed@example.com'",
+  ])("rechecks recipient permission before dispatch: %s", async (change) => {
+    await startCampaignDelivery(env, "owner", campaignId, {}, fetcher);
+    database.exec(`UPDATE subscribers SET ${change} WHERE id = 1`);
+
+    await dispatchDueCampaignJobs(env, fetcher);
+
+    expect(requests).toHaveLength(0);
+    expect(database.prepare("SELECT status FROM email_campaign_recipient_jobs").get())
+      .toEqual({ status: "cancelled" });
+  });
+
+  it("does not dispatch an incomplete audience snapshot", async () => {
+    await startCampaignDelivery(env, "owner", campaignId, {}, fetcher);
+    database.prepare("UPDATE email_campaigns SET audience_snapshot_id = NULL WHERE id = ?").run(campaignId);
+
+    await dispatchDueCampaignJobs(env, fetcher);
+
+    expect(requests).toHaveLength(0);
+  });
+
+  it("does not contact the managed provider when no delivery jobs need work", async () => {
+    await expect(dispatchDueCampaignJobs(env, fetcher)).resolves.toEqual({ processed: 0, paused: 0 });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("keeps future delivery scheduled and honors cancellation before dispatch", async () => {
+    await startCampaignDelivery(env, "owner", campaignId, {
+      scheduledFor: new Date(Date.now() + 60_000).toISOString(),
+    }, fetcher);
+    await dispatchDueCampaignJobs(env, fetcher);
+    expect(requests).toHaveLength(0);
+    await expect(getCampaign(env, "owner", campaignId)).resolves.toMatchObject({ status: "scheduled" });
+
+    await cancelCampaignDelivery(env, "owner", campaignId, fetcher);
+    database.exec("UPDATE email_campaign_recipient_jobs SET next_attempt_at = '2000-01-01T00:00:00Z'");
+    await dispatchDueCampaignJobs(env, fetcher);
+    expect(requests).toHaveLength(0);
+    await expect(getCampaign(env, "owner", campaignId)).resolves.toMatchObject({ status: "cancelled" });
+  });
+
+  it("preserves delivery confirmation that arrives before the send response", async () => {
+    const earlyCallbackFetcher: typeof fetch = async (input, init) => {
+      const response = await fetcher(input, init);
+      if (new URL(String(input)).pathname.endsWith("/deliveries")) {
+        const request = requests.at(-1)!;
+        await applyManagedCampaignEvent(env, {
+          version: MANAGED_CAMPAIGN_PROTOCOL_VERSION,
+          eventId: "early-delivery",
+          sequence: 1,
+          occurredAt: new Date().toISOString(),
+          operationId: request.operationId,
+          campaignRef: campaignId,
+          recipientRef: request.recipient.ref,
+          type: "delivery.delivered",
+          reason: null,
+        });
+      }
+      return response;
+    };
+    await startCampaignDelivery(env, "owner", campaignId, {}, earlyCallbackFetcher);
+    await dispatchDueCampaignJobs(env, earlyCallbackFetcher);
+
+    expect(database.prepare("SELECT status FROM email_campaign_recipient_jobs").get())
+      .toEqual({ status: "delivered" });
+    await expect(getCampaign(env, "owner", campaignId)).resolves.toMatchObject({ status: "sent" });
   });
 
   it("deletes a terminal failed campaign and its delivery records", async () => {

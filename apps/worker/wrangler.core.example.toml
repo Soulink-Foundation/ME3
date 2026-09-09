@@ -81,7 +81,7 @@ max_batch_timeout = 5
 max_retries = 0
 
 [triggers]
-crons = ["*/15 * * * *"]
+crons = ["*/15 * * * *", "* * * * *"]
 
 # Cloudflare Email Service sender binding. Account -> Email stores the sender
 # address; this deploy-time binding lets the Worker call env.EMAIL.send().

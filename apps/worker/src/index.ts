@@ -29,6 +29,7 @@ import { Me3UserAgent } from "./user-agent";
 import { syncManagedAiUsage } from "./managed-ai-billing";
 import { syncDueSoulinkContacts } from "./routes/channels";
 import {
+  CAMPAIGN_DISPATCH_CRON,
   dispatchDueCampaignJobs,
   recoverManagedCampaignEvents,
 } from "./campaign-delivery";
@@ -100,6 +101,10 @@ const worker = {
     const lease = await acquireBackgroundWriteLease(env, "SCHEDULED", "scheduled");
     if (shouldBlockManagedRuntimeBackground(env, lease)) return;
     try {
+      if (_event.cron === CAMPAIGN_DISPATCH_CRON) {
+        await dispatchDueCampaignJobs(env);
+        return;
+      }
       await dispatchDueScheduledAssistantJobs(env);
       await dispatchDueCalendarPushNotifications(env);
       await dispatchDueBookingReminders(env);

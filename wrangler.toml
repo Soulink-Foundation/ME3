@@ -50,7 +50,7 @@ max_batch_timeout = 5
 max_retries = 0
 
 [triggers]
-crons = ["*/15 * * * *"]
+crons = ["*/15 * * * *", "* * * * *"]
 
 [assets]
 directory = "apps/web/dist"
