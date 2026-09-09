@@ -172,10 +172,29 @@ describe("campaign list", () => {
       "1",
     ]);
     expect(wrapper.text()).toContain(
-      "Choose a paid plan to activate managed email campaign delivery.",
+      "Hosted by ME3 includes 500 deliveries per calendar month.",
     );
     expect(wrapper.text()).not.toContain("Optional managed delivery");
 
+    wrapper.unmount();
+  });
+
+  it("shows included usage and upgrades without a paid billing portal", async () => {
+    const original = apiGet.getMockImplementation()!;
+    apiGet.mockImplementation(async (path: string) => {
+      const result = await original(path);
+      if (path === "/email/campaigns/transport") {
+        Object.assign(result.transport.addOn, { entitled: true, status: "active", allowance: 500, used: 10, remaining: 490 });
+      }
+      return result;
+    });
+    const wrapper = mount(CampaignsPage, { attachTo: document.body });
+    await flushPromises();
+    expect(wrapper.text()).toContain("490 deliveries remaining");
+    expect(wrapper.text()).toContain("10 of 500 used");
+    expect(wrapper.text()).toContain("Set up campaign sender");
+    expect(wrapper.text()).toContain("Choose plan");
+    expect(wrapper.text()).not.toContain("Manage capacity");
     wrapper.unmount();
   });
 

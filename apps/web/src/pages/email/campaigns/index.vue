@@ -176,7 +176,7 @@ function scheduleRefresh() {
   if (
     billingReturn.value === "success" &&
     transport.value?.managed &&
-    !transport.value.addOn?.entitled &&
+    !transport.value.addOn?.planKey &&
     billingRefreshAttempts < 4
   ) {
     billingRefreshAttempts += 1;
@@ -434,7 +434,7 @@ onBeforeUnmount(() => {
           No changes were made. You can choose a delivery allowance whenever you are ready.
         </p>
         <p
-          v-else-if="billingReturn === 'success' && !transport?.addOn?.entitled"
+          v-else-if="billingReturn === 'success' && !transport?.addOn?.planKey"
           class="notice"
           role="status"
         >
@@ -442,13 +442,13 @@ onBeforeUnmount(() => {
         </p>
 
         <section
-          v-if="transport?.managed && transport.addOn && !transport.addOn.entitled"
+          v-if="transport?.managed && transport.addOn && !transport.addOn.planKey"
           class="campaign-add-on"
           aria-labelledby="campaign-add-on-title"
         >
           <div class="campaign-add-on__intro">
             <h1 id="campaign-add-on-title">Choose your monthly email capacity</h1>
-            <p>Choose a paid plan to activate managed email campaign delivery.</p>
+            <p>Hosted by ME3 includes 500 deliveries per calendar month. Upgrade for more; each plan below is your total monthly allowance.</p>
           </div>
           <div class="capacity-options" aria-label="Campaign Sending plans">
             <article v-for="plan in transport.addOn.plans" :key="plan.key" class="capacity-option">
@@ -469,7 +469,7 @@ onBeforeUnmount(() => {
         </section>
 
         <section
-          v-else-if="transport?.managed && transport.addOn?.entitled"
+          v-if="transport?.managed && transport.addOn?.entitled"
           class="delivery-summary"
           aria-labelledby="campaign-delivery-title"
         >
@@ -498,6 +498,7 @@ onBeforeUnmount(() => {
               color="outline"
               shape="soft"
               size="small"
+              v-if="transport.addOn.planKey"
               :disabled="openingBilling"
               @click="openBillingPortal"
             >
