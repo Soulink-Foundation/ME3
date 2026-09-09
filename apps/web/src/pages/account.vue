@@ -3,6 +3,7 @@ import { definePage } from "unplugin-vue-router/runtime";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api } from "../api";
+import { getEmailTestOperation, finishEmailTestOperation } from "../utils/emailTestOperation";
 import Button from "../components/Button.vue";
 import PageLoading from "../components/PageLoading.vue";
 import PluginList from "../components/PluginList.vue";
@@ -1372,20 +1373,25 @@ async function sendEmailProviderTest() {
   mailboxError.value = null;
   emailProviderError.value = null;
 
+  const scope = JSON.stringify([auth.user?.id, selectedEmailProviderId.value, emailAddressNormalized.value]);
   try {
+    const { operationId } = getEmailTestOperation(localStorage, scope);
     const response = await api.post<{
       ok: boolean;
       sentTo: string;
       providerMessageId: string | null;
     }>("/email-provider-settings/test", {
+      operationId,
       providerId: selectedEmailProviderId.value,
       to: emailAddressNormalized.value,
     });
+    finishEmailTestOperation(localStorage, scope);
     toastSuccess(response.providerMessageId
       ? `Test email sent to ${response.sentTo}. Provider message ${response.providerMessageId}.`
       : `Test email accepted for ${response.sentTo}.`);
     await loadEmailProviderSettings();
   } catch (e: any) {
+    if (e.status === 422) finishEmailTestOperation(localStorage, scope);
     emailProviderError.value = e.message || "Failed to send test email";
   } finally {
     emailProviderTesting.value = false;

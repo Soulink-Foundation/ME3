@@ -7,6 +7,7 @@ import {
 } from "./booking-reminders";
 import {
   EmailProviderInputError,
+  EmailProviderDeliveryUnknownError,
   sendEmailWithProvider,
 } from "./email-providers";
 import type { DbBooking, Env } from "./types";
@@ -136,6 +137,27 @@ describe("booking reminders", () => {
       provider_message_id: "message-1",
       error_message: null,
     });
+  });
+
+  it("retries an ambiguous managed host copy with stable guest and host operation IDs", async () => {
+    const env = createEnv();
+    await scheduleBookingRemindersForBooking(env, {
+      booking: env.__state.booking, bookingTitle: "Session", timezone: "Europe/Dublin",
+      reminders: { enabled: true, reminder24h: true, reminder2h: false },
+    });
+    const reminder = env.__state.reminders[0]!;
+    reminder.status = "queued";
+    const accepted = { auditId: "audit", providerId: "managed_gateway" as const, providerLabel: "Managed", providerMessageId: "guest", providerStatus: "accepted", sentAt: new Date().toISOString() };
+    mockSendEmailWithProvider.mockResolvedValueOnce(accepted).mockRejectedValueOnce(new EmailProviderDeliveryUnknownError()).mockResolvedValue(accepted);
+    const message = createQueueMessage(reminder.id);
+    await processBookingReminderBatch({ queue: BOOKING_REMINDER_QUEUE_NAME, messages: [message] } as never, env);
+    expect(message.retry).toHaveBeenCalledOnce();
+    expect(reminder.status).toBe("scheduled");
+    reminder.status = "queued";
+    await processBookingReminderBatch({ queue: BOOKING_REMINDER_QUEUE_NAME, messages: [createQueueMessage(reminder.id)] } as never, env);
+    const operations = mockSendEmailWithProvider.mock.calls.map((call) => call[2].operationId);
+    expect(operations).toEqual([`reminder:${reminder.id}:guest`, `reminder:${reminder.id}:host`, `reminder:${reminder.id}:guest`, `reminder:${reminder.id}:host`]);
+    expect(reminder.status).toBe("sent");
   });
 
   it("marks setup-missing email providers as failed", async () => {

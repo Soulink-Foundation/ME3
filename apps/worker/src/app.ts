@@ -32,6 +32,7 @@ import {
 } from "./booking-reminders";
 import {
   EmailProviderInputError,
+  EmailProviderDeliveryUnknownError,
   getEmailProviderSettings,
   sendEmailProviderTest,
   sendEmailWithProvider,
@@ -1322,6 +1323,9 @@ app.post("/api/email-provider-settings/test", async (c) => {
   try {
     return c.json(await sendEmailProviderTest(c.env, ownerId, owner?.email, body));
   } catch (error) {
+    if (error instanceof EmailProviderDeliveryUnknownError) {
+      return c.json({ error: error.message, code: "delivery_unknown", status: "pending" }, 502);
+    }
     if (error instanceof EmailProviderInputError) {
       return c.json({ error: error.message }, error.status as any);
     }

@@ -1,7 +1,7 @@
-import { sendEmailWithProvider } from "./email-providers";
+import { EmailProviderDeliveryUnknownError, sendEmailWithProvider } from "./email-providers";
 import type { DbBooking, Env } from "./types";
 
-type SendStatus = "sent" | "failed" | "skipped";
+type SendStatus = "sent" | "failed" | "skipped" | "pending";
 
 export type TransactionalEmailResult = {
   status: SendStatus;
@@ -11,6 +11,7 @@ export type TransactionalEmailResult = {
 };
 
 export type BookingEmailDetails = {
+  operationId?: string;
   ownerId: string;
   hostName: string;
   hostEmail?: string | null;
@@ -33,6 +34,7 @@ export type BookingEmailDetails = {
 };
 
 export type ProductPurchaseEmailDetails = {
+  operationId?: string;
   ownerId: string;
   hostName: string;
   hostEmail?: string | null;
@@ -45,6 +47,7 @@ export type ProductPurchaseEmailDetails = {
 };
 
 export type ProductPaymentInstructionsEmailDetails = {
+  operationId?: string;
   ownerId: string;
   hostName: string;
   hostEmail?: string | null;
@@ -58,6 +61,7 @@ export type ProductPaymentInstructionsEmailDetails = {
 };
 
 export type NewsletterSubscriptionConfirmationEmailDetails = {
+  operationId?: string;
   ownerId: string;
   siteId: string;
   siteName: string;
@@ -84,6 +88,7 @@ If you did not request this, you can ignore this email.`;
   `);
 
   return sendWorkflowEmail(env, details.ownerId, {
+    operationId: details.operationId || `newsletter:${details.siteId}:${details.confirmationUrl}`,
     toAddress: details.subscriberEmail,
     subject,
     textBody,
@@ -169,6 +174,7 @@ You can reply to this email to contact ${details.hostName}.
   });
 
   return sendWorkflowEmail(env, details.ownerId, {
+    operationId: details.operationId || (details.bookingId && !details.test ? `booking:${details.bookingId}:guest-confirmation` : undefined),
     toAddress: details.guestEmail,
     subject,
     textBody,
@@ -230,6 +236,7 @@ Duration: ${details.durationMinutes} minutes${paymentLine ? `\n${paymentLine}` :
   });
 
   return sendWorkflowEmail(env, details.ownerId, {
+    operationId: details.operationId ? `${details.operationId}:host` : (details.bookingId && !details.test ? `booking:${details.bookingId}:host-confirmation` : undefined),
     toAddress: details.hostEmail,
     subject,
     textBody,
@@ -258,6 +265,7 @@ You can reply to this email to contact ${details.hostName}.`;
   const htmlBody = productEmailHtml(details);
 
   return sendWorkflowEmail(env, details.ownerId, {
+    operationId: details.operationId,
     toAddress: details.buyerEmail,
     subject,
     textBody,
@@ -302,6 +310,7 @@ You can reply to this email to contact ${details.hostName}.`;
   `);
 
   return sendWorkflowEmail(env, details.ownerId, {
+    operationId: details.operationId,
     toAddress: details.buyerEmail,
     subject: `Payment details: ${details.productTitle}`,
     textBody,
@@ -327,6 +336,7 @@ export async function getOwnerContact(
 
 export function bookingDetailsFromBooking(input: {
   booking: DbBooking;
+  operationId?: string;
   ownerId: string;
   hostName: string;
   hostEmail?: string | null;
@@ -339,6 +349,7 @@ export function bookingDetailsFromBooking(input: {
   test?: boolean;
 }): BookingEmailDetails {
   return {
+    operationId: input.operationId,
     ownerId: input.ownerId,
     hostName: input.hostName,
     hostEmail: input.hostEmail || null,
@@ -370,6 +381,7 @@ async function sendWorkflowEmail(
   env: Env,
   ownerId: string,
   input: {
+    operationId?: string;
     toAddress: string;
     subject: string;
     textBody: string;
@@ -382,6 +394,7 @@ async function sendWorkflowEmail(
   try {
     const result = await sendEmailWithProvider(env, ownerId, {
       purpose: "workflow",
+      operationId: input.operationId,
       fromName: input.fromName,
       replyToAddress: input.replyToAddress || undefined,
       toAddress: input.toAddress,
@@ -399,7 +412,7 @@ async function sendWorkflowEmail(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Email failed to send";
     return {
-      status: message.includes("not ready to send yet") ? "skipped" : "failed",
+      status: error instanceof EmailProviderDeliveryUnknownError ? "pending" : message.includes("not ready to send yet") ? "skipped" : "failed",
       to: input.toAddress,
       error: message,
     };

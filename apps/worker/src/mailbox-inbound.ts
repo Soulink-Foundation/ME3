@@ -1,3 +1,4 @@
+import { stageMailboxAttachmentKeys, finishMailboxAttachmentStaging, cleanMailboxAttachmentStaging } from "./mailbox-attachment-staging";
 import type { AgentMailboxMessage } from "./agent-chat";
 import type { EmailProviderAttachment } from "./email-providers";
 import { publishMailboxMessageReceived } from "./mailbox-events";
@@ -94,6 +95,7 @@ export async function deliverInboundEmail(
   env: Env,
   options: InboundEmailDeliveryOptions = {},
 ): Promise<InboundEmailDeliveryResult> {
+  let stagedMessageId: string | null = null;
   try {
     const existingDelivery = options.managedDelivery
       ? await getManagedInboundDelivery(env, options.managedDelivery.deliveryId)
@@ -137,6 +139,7 @@ export async function deliverInboundEmail(
       crypto.randomUUID();
     const threadKey = resolveMailboxThreadKey(parsed.headers, providerMessageId);
     const rowId = crypto.randomUUID();
+    stagedMessageId = rowId;
     const storedAttachments = await storeInboundEmailAttachments(
       env,
       mailbox.id,
@@ -208,7 +211,7 @@ export async function deliverInboundEmail(
         now,
       );
       try {
-        await env.DB.batch([messageStatement, deliveryStatement]);
+        await env.DB.batch([messageStatement, deliveryStatement, finishMailboxAttachmentStaging(env, rowId)]);
       } catch (error) {
         const racedDelivery = await getManagedInboundDelivery(env, delivery.deliveryId);
         if (racedDelivery && managedInboundDeliveryMatches(racedDelivery, delivery)) {
@@ -218,11 +221,13 @@ export async function deliverInboundEmail(
             messageId: racedDelivery.mailbox_message_id,
           };
         }
+        if (racedDelivery) return { status: "conflict", reason: "Delivery ID was already used for different message content." };
         throw error;
       }
     } else {
-      await messageStatement.run();
+      await env.DB.batch([messageStatement, finishMailboxAttachmentStaging(env, rowId)]);
     }
+    stagedMessageId = null;
 
     await publishMailboxMessageReceived(env, {
       ownerId: mailbox.user_id,
@@ -247,6 +252,10 @@ export async function deliverInboundEmail(
       status: "unavailable",
       reason: "ME3 could not process this email.",
     };
+  } finally {
+    if (stagedMessageId) await cleanMailboxAttachmentStaging(env, stagedMessageId).catch((error) => {
+      console.error("Mailbox attachment cleanup deferred", error);
+    });
   }
 }
 
@@ -527,7 +536,9 @@ function parseEmailBody(
   body: string,
   contentType: string,
   transferEncoding: string | undefined,
+  depth = 0,
 ): { textBody: string; htmlBody: string | null; attachments: ParsedInboundEmailAttachment[] } {
+  if (depth > 30) throw new Error("Email MIME nesting exceeds the supported limit");
   const boundary = extractMimeBoundary(contentType);
   if (!boundary) {
     const decoded = decodeEmailBody(body, transferEncoding);
@@ -540,8 +551,12 @@ function parseEmailBody(
   let textBody = "";
   let htmlBody: string | null = null;
   const attachments: ParsedInboundEmailAttachment[] = [];
-  for (const part of body.split(`--${boundary}`)) {
-    if (!part.trim() || part.trim() === "--") continue;
+  const escapedBoundary = boundary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = body.split(new RegExp(`^--${escapedBoundary}(--)?[ \t]*(?:\r?\n|$)`, "m"));
+  for (let index = 2; index < parts.length; index += 2) {
+    if (parts[index - 1] === "--") break;
+    const part = parts[index];
+    if (!part.trim()) continue;
     const [partHeadersText, ...partBodyParts] = part
       .replace(/^(\r?\n)/, "")
       .split(/\r?\n\r?\n/);
@@ -569,6 +584,13 @@ function parseEmailBody(
       continue;
     }
 
+    if (/^multipart\//i.test(partContentType)) {
+      const nested = parseEmailBody(partBody, partContentType, partHeaders["content-transfer-encoding"], depth + 1);
+      if (!textBody) textBody = nested.textBody;
+      if (!htmlBody) htmlBody = nested.htmlBody;
+      attachments.push(...nested.attachments);
+      continue;
+    }
     const decoded = decodeEmailBody(partBody, partHeaders["content-transfer-encoding"]).trim();
     if (!textBody && /^text\/plain\b/i.test(partContentType)) {
       textBody = decoded;
@@ -649,39 +671,20 @@ async function storeInboundEmailAttachments(
 ): Promise<StoredMailboxAttachment[]> {
   if (!env.SITE_ASSETS || attachments.length === 0) return [];
 
-  const stored: StoredMailboxAttachment[] = [];
-  for (const [index, attachment] of attachments.entries()) {
-    const filename = sanitizeAttachmentFilename(
-      attachment.filename,
-      `attachment-${index + 1}`,
-    );
-    const storageKey = [
-      "mailbox",
-      mailboxId,
-      "messages",
-      messageId,
-      "attachments",
-      `${index}-${crypto.randomUUID()}-${filename}`,
-    ].join("/");
-    await env.SITE_ASSETS.put(storageKey, attachment.content, {
-      httpMetadata: {
-        contentType: attachment.mimeType,
-      },
-      customMetadata: {
-        mailboxId,
-        messageId,
-        filename,
-        disposition: attachment.disposition,
-      },
-    });
-    stored.push({
-      filename,
-      mimeType: attachment.mimeType,
-      disposition: attachment.disposition,
+  const stored: StoredMailboxAttachment[] = attachments.map((attachment, index) => {
+    const filename = sanitizeAttachmentFilename(attachment.filename, `attachment-${index + 1}`);
+    return {
+      filename, mimeType: attachment.mimeType, disposition: attachment.disposition,
       size: attachment.content.byteLength,
-      storageKey,
-      contentId: attachment.contentId,
-      sourceMessageId: messageId,
+      storageKey: `mailbox/${mailboxId}/messages/${messageId}/attachments/${index}-${crypto.randomUUID()}-${filename}`,
+      contentId: attachment.contentId, sourceMessageId: messageId,
+    };
+  });
+  await stageMailboxAttachmentKeys(env, messageId, stored.map((attachment) => attachment.storageKey));
+  for (const [index, attachment] of stored.entries()) {
+    await env.SITE_ASSETS.put(attachment.storageKey, attachments[index].content, {
+      httpMetadata: { contentType: attachment.mimeType },
+      customMetadata: { mailboxId, messageId, filename: attachment.filename, disposition: attachment.disposition },
     });
   }
   return stored;

@@ -1,3 +1,4 @@
+import { getEmailTestOperation, finishEmailTestOperation } from "../utils/emailTestOperation";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import { useWizardStore } from "./wizard";
@@ -1291,10 +1292,14 @@ export const useSitesStore = defineStore("sites", () => {
     error.value = null;
 
     try {
-      return await api.post<ProductConfirmationTestResponse>(
+      const scope = JSON.stringify([username, "products", payload]);
+      const operation = getEmailTestOperation(localStorage, scope);
+      const result = await api.post<ProductConfirmationTestResponse>(
         `/sites/${username}/products/confirmation-email/test`,
-        payload,
+        { ...payload, ...operation },
       );
+      finishEmailTestOperation(localStorage, scope);
+      return result;
     } catch (e: any) {
       error.value = e.message || "Failed to send test email";
       throw e;
@@ -1311,10 +1316,14 @@ export const useSitesStore = defineStore("sites", () => {
     error.value = null;
 
     try {
-      return await api.post<BookingConfirmationTestResponse>(
+      const scope = JSON.stringify([username, "bookings", payload]);
+      const operation = getEmailTestOperation(localStorage, scope);
+      const result = await api.post<BookingConfirmationTestResponse>(
         `/sites/${username}/bookings/confirmation-email/test`,
-        payload,
+        { ...payload, ...operation },
       );
+      finishEmailTestOperation(localStorage, scope);
+      return result;
     } catch (e: any) {
       error.value = e.message || "Failed to send test email";
       throw e;

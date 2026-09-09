@@ -88,6 +88,7 @@ export type EmailProviderSendRequest = {
   purpose: EmailSendPurpose;
   mailboxId?: string | null;
   mailboxMessageId?: string | null;
+  operationId?: string | null;
   fromAddress?: string | null;
   fromName?: string | null;
   replyToAddress?: string | null;
@@ -837,6 +838,7 @@ export async function sendEmailProviderTest(
     const result = await sendEmailWithProvider(env, ownerId, {
       providerId,
       purpose: "test",
+      operationId: typeof body.operationId === "string" ? body.operationId : null,
       toAddress,
       subject: "ME3 test email",
       textBody: "This is a test email from your ME3 outbound sender settings.",
@@ -848,6 +850,7 @@ export async function sendEmailProviderTest(
     return { ok: true, sentTo: toAddress, ...result };
   } catch (error) {
     const sendError = normalizeSendError(error);
+    if (error instanceof EmailProviderDeliveryUnknownError) throw error;
     if (providerId) {
       await updateProviderTestStatus(
         env,
@@ -875,6 +878,13 @@ export async function sendEmailWithProvider(
       403,
     );
   }
+  const operationId = input.operationId?.trim();
+  if (managedGateway && !input.mailboxMessageId && (!operationId || operationId.length > 500)) {
+    throw new EmailProviderInputError("Managed email requires a stable operation ID before sending", 409);
+  }
+  const operationAuditId = managedGateway && !input.mailboxMessageId
+    ? await managedEmailOperationAuditId(ownerId, input.purpose, operationId!)
+    : null;
   const fromAddress = (
     managedGateway
       ? await getManagedEmailFromAddress(env, ownerId)
@@ -910,7 +920,7 @@ export async function sendEmailWithProvider(
   }
 
   const managedRequestFingerprint =
-    managedGateway && input.mailboxMessageId
+    managedGateway
       ? await createManagedEmailRequestFingerprint(input, {
           fromAddress,
           fromName,
@@ -929,7 +939,7 @@ export async function sendEmailWithProvider(
           managedRequestFingerprint,
         )
       : null;
-  const auditId = pendingAudit?.id || crypto.randomUUID();
+  const auditId = operationAuditId || pendingAudit?.id || crypto.randomUUID();
   const message: EmailProviderSendMessage = {
     auditId,
     purpose: input.purpose,
@@ -987,12 +997,32 @@ export async function sendEmailWithProvider(
         status: "pending",
         metadata: {
           source: resolved.source,
-          managed_request_fingerprint: managedRequestFingerprint,
           ...(input.metadata || {}),
+          managed_request_fingerprint: managedRequestFingerprint,
         },
         errorMessage: null,
         sentAt: null,
-      });
+      }, Boolean(operationAuditId));
+    }
+    if (operationAuditId) {
+      const existing = await env.DB.prepare(
+        `SELECT id, metadata_json, status, provider_message_id, provider_status, sent_at, error_message
+         FROM email_send_audit WHERE id = ? AND user_id = ? AND provider_id = ?`,
+      ).bind(auditId, ownerId, MANAGED_EMAIL_PROVIDER_ID).first<{
+        metadata_json: string | null; status: string; provider_message_id: string | null;
+        provider_status: string | null; sent_at: string | null; error_message: string | null;
+      }>();
+      if (!existing || parseJsonObject(existing.metadata_json).managed_request_fingerprint !== managedRequestFingerprint) {
+        throw new EmailProviderInputError("This email operation already exists with different content; reconcile it before starting another send", 409);
+      }
+      if (existing.status === "sent") return {
+        auditId, providerId: resolved.providerId, providerLabel: resolved.adapter.label,
+        providerMessageId: existing.provider_message_id, providerStatus: existing.provider_status,
+        sentAt: existing.sent_at!,
+      };
+      if (existing.status === "failed") {
+        throw new EmailProviderInputError(existing.error_message || "This email operation failed", 422);
+      }
     }
   }
 
@@ -1015,7 +1045,7 @@ export async function sendEmailWithProvider(
       providerMessageId: null,
       providerStatus: sendError.code,
       status: "failed" as const,
-      metadata: { raw: sendError.raw, source: resolved.source, ...(input.metadata || {}) },
+      metadata: { raw: sendError.raw, source: resolved.source, ...(input.metadata || {}), managed_request_fingerprint: managedRequestFingerprint },
       errorMessage: sendError.message,
       sentAt: null,
     };
@@ -1024,7 +1054,7 @@ export async function sendEmailWithProvider(
     } else {
       await insertEmailSendAudit(env, failedAudit);
     }
-    throw new EmailProviderInputError(sendError.message, sendError.status);
+    throw new EmailProviderInputError(sendError.message, operationAuditId ? 422 : sendError.status);
   }
 
   const sentAt = new Date().toISOString();
@@ -1033,7 +1063,7 @@ export async function sendEmailWithProvider(
     providerMessageId: result.providerMessageId,
     providerStatus: result.providerStatus,
     status: "sent" as const,
-    metadata: { raw: result.raw, source: resolved.source, ...(input.metadata || {}) },
+    metadata: { raw: result.raw, source: resolved.source, ...(input.metadata || {}), managed_request_fingerprint: managedRequestFingerprint },
     errorMessage: null,
     sentAt,
   };
@@ -1372,6 +1402,7 @@ async function updatePendingEmailSendAudit(
 async function insertEmailSendAudit(
   env: Env,
   input: EmailSendAuditWrite,
+  ignoreExisting = false,
 ) {
   const now = new Date().toISOString();
   await env.DB.prepare(
@@ -1382,7 +1413,8 @@ async function insertEmailSendAudit(
        references_header, metadata_json, error_message, created_by,
        approved_by_user_id, requested_at, sent_at, created_at, updated_at
      )
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ${ignoreExisting ? "ON CONFLICT(id) DO NOTHING" : ""}`,
   )
     .bind(
       input.auditId,
@@ -1997,8 +2029,8 @@ async function getManagedEmailFromAddress(env: Env, ownerId: string): Promise<st
   const mailbox = await env.DB.prepare(
     `SELECT alias_local_part
      FROM mailbox_aliases
-     WHERE user_id = ?
-     ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, created_at ASC
+     WHERE user_id = ? AND status = 'active'
+     ORDER BY created_at ASC
      LIMIT 1`,
   )
     .bind(ownerId)
@@ -2131,6 +2163,13 @@ function stringifyMetadata(metadata: Record<string, unknown>): Record<string, st
       typeof value === "string" ? value : JSON.stringify(value),
     ]),
   );
+}
+
+// The gateway's legacy contract accepts only v4-shaped audit IDs. This is a
+// deterministic identifier, not a random credential; authentication is separate.
+async function managedEmailOperationAuditId(ownerId: string, purpose: EmailSendPurpose, operationId: string): Promise<string> {
+  const hash = await sha256Hex(new TextEncoder().encode(JSON.stringify(["me3-managed-email", ownerId, purpose, operationId])));
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
 }
 
 async function createManagedEmailRequestFingerprint(

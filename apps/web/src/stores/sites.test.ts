@@ -209,7 +209,7 @@ describe("sites store", () => {
       });
       expect(api.post).toHaveBeenCalledWith(
         "/sites/testuser/products/confirmation-email/test",
-        payload,
+        expect.objectContaining({ ...payload, operationId: expect.any(String), startedAt: expect.any(String) }),
       );
     });
   });

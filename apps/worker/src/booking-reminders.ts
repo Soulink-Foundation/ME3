@@ -484,7 +484,7 @@ async function sendBookingReminder(
   reminder: DbBookingReminder,
   payload: BookingReminderPayload,
 ): Promise<ReminderSendResult> {
-  if (reminder.channel === "email") return sendEmailReminder(env, payload, reminder.reminder_type);
+  if (reminder.channel === "email") return sendEmailReminder(env, payload, reminder.reminder_type, reminder.id);
   if (reminder.channel === "telegram") return sendTelegramReminder(env, payload, reminder.reminder_type);
   if (reminder.channel === "soulink") return sendSoulinkReminder(env, payload, reminder.reminder_type);
   return { status: "skipped", reason: "Unsupported reminder channel" };
@@ -494,11 +494,13 @@ async function sendEmailReminder(
   env: Env,
   payload: BookingReminderPayload,
   reminderType: BookingReminderType,
+  reminderId: string,
 ): Promise<ReminderSendResult> {
   const guest = buildGuestReminderEmail(reminderType, payload);
   try {
     const result = await sendEmailWithProvider(env, payload.userId, {
       purpose: "workflow",
+      operationId: `reminder:${reminderId}:guest`,
       fromName: payload.hostName,
       replyToAddress: payload.hostEmail,
       toAddress: guest.to,
@@ -516,6 +518,7 @@ async function sendEmailReminder(
     const host = buildHostReminderEmail(reminderType, payload);
     await sendEmailWithProvider(env, payload.userId, {
       purpose: "workflow",
+      operationId: `reminder:${reminderId}:host`,
       toAddress: host.to,
       subject: host.subject,
       textBody: host.textBody,
@@ -526,7 +529,11 @@ async function sendEmailReminder(
         reminder_channel: "host",
       },
       createdBy: "assistant",
-    }).catch(() => null);
+    }).catch((error) => {
+      // Managed retries replay the completed guest operation; other providers
+      // retain their existing best-effort host-copy behavior.
+      if (result.providerId === "managed_gateway") throw error;
+    });
 
     return { status: "sent", providerMessageId: result.providerMessageId };
   } catch (error) {

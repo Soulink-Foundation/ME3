@@ -239,6 +239,7 @@ export function registerSiteRoutes(app: AppHono, deps: OwnerRouteDeps) {
 
     const body = await c.req
       .json<{
+        operationId?: unknown;
         productSlug?: unknown;
         productTitle?: unknown;
         siteName?: unknown;
@@ -277,6 +278,7 @@ export function registerSiteRoutes(app: AppHono, deps: OwnerRouteDeps) {
       productTitle,
       subject: applyPurchaseEmailTokens(subject, tokenCtx),
       messageText: applyPurchaseEmailTokens(message, tokenCtx),
+      operationId: typeof body.operationId === "string" ? body.operationId : undefined,
       test: true,
     });
     if (result.status !== "sent") {
@@ -302,6 +304,8 @@ export function registerSiteRoutes(app: AppHono, deps: OwnerRouteDeps) {
 
     const body = await c.req
       .json<{
+        operationId?: unknown;
+        startedAt?: unknown;
         to?: unknown;
         bookingTitle?: unknown;
         siteName?: unknown;
@@ -325,7 +329,9 @@ export function registerSiteRoutes(app: AppHono, deps: OwnerRouteDeps) {
       return c.json({ error: "Enter a valid test recipient email address" }, 400);
     }
 
-    const startsAt = new Date(Date.now() + 24 * 60 * 60_000).toISOString();
+    const testStartedAt = typeof body.startedAt === "string" ? Date.parse(body.startedAt) : Date.now();
+    if (!Number.isFinite(testStartedAt)) return c.json({ error: "Invalid test start time" }, 400);
+    const startsAt = new Date(testStartedAt + 24 * 60 * 60_000).toISOString();
     const manualPayment = body.paymentMethod === "manual";
     const amountDue = Number(body.amountDue);
     const currency = normalizeShortEmailText(body.currency, 3).toLowerCase();
@@ -377,6 +383,7 @@ export function registerSiteRoutes(app: AppHono, deps: OwnerRouteDeps) {
         timezone: normalizeShortEmailText(body.timezone, 80) || "UTC",
         guestMessageText: normalizeLongEmailText(body.message, 8000),
         paymentInstructions,
+        operationId: typeof body.operationId === "string" ? body.operationId : undefined,
         test: true,
       }),
     );

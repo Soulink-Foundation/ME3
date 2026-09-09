@@ -1,3 +1,4 @@
+import { MAILBOX_ATTACHMENT_STAGING_SQL } from "./mailbox-attachment-staging";
 import type { Env } from "./types";
 
 type RuntimeMigration = {
@@ -210,6 +211,11 @@ const runtimeMigrations: RuntimeMigration[] = [
     id: "0047_subscriber_double_opt_in",
     checksum: "2026-09-03-subscriber-double-opt-in-v1",
     apply: applySubscriberDoubleOptInMigration,
+  },
+  {
+    id: "0048_mailbox_attachment_staging",
+    checksum: "2026-09-09-mailbox-attachment-staging-v1",
+    async apply(db) { await db.prepare(MAILBOX_ATTACHMENT_STAGING_SQL).run(); },
   },
 ];
 

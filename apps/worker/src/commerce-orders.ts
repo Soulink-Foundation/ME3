@@ -129,6 +129,7 @@ export async function createProductCheckout(
       ? applyPurchaseEmailTokens(product.confirmationEmail.message, tokens)
       : "";
     const sent = await sendProductPaymentInstructionsEmail(env, {
+      operationId: `order:${orderId}:payment-instructions`,
       ownerId: site.user_id,
       hostName: owner.name || site.username,
       hostEmail: owner.email,
@@ -140,7 +141,7 @@ export async function createProductCheckout(
       paymentInstructions,
       messageText: extraMessage,
     });
-    if (sent.status !== "sent") {
+    if (sent.status !== "sent" && sent.status !== "pending") {
       await env.DB.prepare(
         `UPDATE commerce_orders SET status = 'failed', updated_at = datetime('now') WHERE id = ?`,
       )
@@ -154,7 +155,9 @@ export async function createProductCheckout(
     return {
       paymentMethod,
       orderId,
-      message: "Your request is confirmed. Check your email for payment details.",
+      message: sent.status === "pending"
+        ? "Your request is confirmed. Email delivery is still being confirmed."
+        : "Your request is confirmed. Check your email for payment details.",
     };
   }
 
@@ -512,6 +515,7 @@ async function sendProductConfirmation(
     supportEmail: owner.email,
   };
   await sendProductPurchaseConfirmationEmail(env, {
+    operationId: `order:${order.id}:purchase-confirmation`,
     ownerId: site.user_id,
     hostName: owner.name || site.username,
     hostEmail: owner.email,

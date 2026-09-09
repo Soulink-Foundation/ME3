@@ -1,3 +1,4 @@
+import { reconcileMailboxAttachmentStaging } from "./mailbox-attachment-staging";
 import app from "./app";
 import { dispatchDueCalendarSourceRefreshes } from "./calendar-sources";
 import { dispatchDueCalendarPushNotifications } from "./calendar-push-notifications";
@@ -105,6 +106,7 @@ const worker = {
         await dispatchDueCampaignJobs(env);
         return;
       }
+      await reconcileMailboxAttachmentStaging(env);
       await dispatchDueScheduledAssistantJobs(env);
       await dispatchDueCalendarPushNotifications(env);
       await dispatchDueBookingReminders(env);

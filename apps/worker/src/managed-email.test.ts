@@ -441,6 +441,7 @@ describe("managed email outbound provider", () => {
     await expect(
       sendEmailWithProvider(managedEnv(db), "owner", {
         purpose: "workflow",
+        operationId: "workflow-test-1",
         replyToAddress: "private-owner@example.com",
         toAddress: "client@example.com",
         subject: "Automated send",
@@ -482,7 +483,7 @@ describe("managed email outbound provider", () => {
         managedEnv(db),
         "owner",
         "owner@example.com",
-        { providerId: "managed_gateway" },
+        { providerId: "managed_gateway", operationId: "provider-test-1" },
       ),
     ).resolves.toMatchObject({ ok: true, providerId: "managed_gateway" });
 
@@ -492,6 +493,88 @@ describe("managed email outbound provider", () => {
       ownerApproved: true,
       approvedByMe3OwnerId: "cloud-owner-id",
     });
+  });
+});
+
+describe("managed operations and active senders", () => {
+  const operation = {
+    operationId: "booking:one:guest", purpose: "workflow" as const,
+    toAddress: "guest@example.com", subject: "Confirmed", textBody: "Your booking is confirmed.",
+  };
+  it.each(["network", "delivery_unknown", "delivery_processing"])("reconciles %s with the same operation and never resends a completed operation", async (failure) => {
+    const db = new ManagedEmailTestDb();
+    const fetchMock = vi.fn();
+    if (failure === "network") fetchMock.mockRejectedValueOnce(new Error("response lost"));
+    else fetchMock.mockResolvedValueOnce(Response.json({ code: failure, error: "Still pending" }, { status: 409 }));
+    fetchMock.mockResolvedValueOnce(Response.json({ status: "duplicate", providerMessageId: "message-one" }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(sendEmailWithProvider(managedEnv(db), "owner", operation)).rejects.toBeInstanceOf(EmailProviderDeliveryUnknownError);
+    expect(db.sendAudits[0].status).toBe("pending");
+    const resolved = await sendEmailWithProvider(managedEnv(db), "owner", operation);
+    expect(await sendEmailWithProvider(managedEnv(db), "owner", operation)).toEqual(resolved);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const requests = fetchMock.mock.calls.map((call) => call[1]);
+    expect(requests[0].headers["Idempotency-Key"]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(requests[0].headers["Idempotency-Key"]).toBe(requests[1].headers["Idempotency-Key"]);
+    expect(requests[0].body).toBe(requests[1].body);
+    expect(db.sendAudits).toHaveLength(1);
+    expect(db.sendAudits[0].status).toBe("sent");
+  });
+  it("reconciles acceptance when the local completion write fails", async () => {
+    const db = new ManagedEmailTestDb(); db.failNextAuditCompletion = true;
+    const fetchMock = vi.fn().mockImplementation(async () => Response.json({ status: "duplicate", providerMessageId: "accepted-one" }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(sendEmailWithProvider(managedEnv(db), "owner", operation)).rejects.toBeInstanceOf(EmailProviderDeliveryUnknownError);
+    expect(db.sendAudits[0].status).toBe("pending");
+    await expect(sendEmailWithProvider(managedEnv(db), "owner", operation)).resolves.toMatchObject({ providerMessageId: "accepted-one" });
+    expect(new Set(fetchMock.mock.calls.map((call) => call[1].headers["Idempotency-Key"])).size).toBe(1);
+  });
+  it("keeps definitive rejections terminal so the client can explicitly start a new test", async () => {
+    const db = new ManagedEmailTestDb();
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ error: "Sender rejected" }, { status: 400 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(sendEmailWithProvider(managedEnv(db), "owner", operation)).rejects.toMatchObject({ status: 422 });
+    await expect(sendEmailWithProvider(managedEnv(db), "owner", operation)).rejects.toMatchObject({ status: 422 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(db.sendAudits[0].status).toBe("failed");
+  });
+  it("does not turn a pending provider test into a failed operation", async () => {
+    const db = new ManagedEmailTestDb();
+    const fetchMock = vi.fn().mockRejectedValueOnce(new Error("response lost"))
+      .mockResolvedValueOnce(Response.json({ status: "duplicate", providerMessageId: "test-one" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const input = { providerId: "managed_gateway", operationId: "test-stable" };
+    await expect(sendEmailProviderTest(managedEnv(db), "owner", "owner@example.com", input)).rejects.toBeInstanceOf(EmailProviderDeliveryUnknownError);
+    expect(db.sendAudits[0].status).toBe("pending");
+    await sendEmailProviderTest(managedEnv(db), "owner", "owner@example.com", input);
+    expect(fetchMock.mock.calls[0][1].headers["Idempotency-Key"]).toBe(fetchMock.mock.calls[1][1].headers["Idempotency-Key"]);
+  });
+  it("rejects changed content under the same operation", async () => {
+    const db = new ManagedEmailTestDb();
+    const fetchMock = vi.fn().mockRejectedValue(new Error("response lost")); vi.stubGlobal("fetch", fetchMock);
+    await expect(sendEmailWithProvider(managedEnv(db), "owner", operation)).rejects.toBeInstanceOf(EmailProviderDeliveryUnknownError);
+    await expect(sendEmailWithProvider(managedEnv(db), "owner", { ...operation, textBody: "Changed" })).rejects.toMatchObject({ status: 409 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it("uses one gateway key for concurrent retries", async () => {
+    const db = new ManagedEmailTestDb();
+    const fetchMock = vi.fn().mockImplementation(async () => Response.json({ status: "accepted", providerMessageId: "one" }));
+    vi.stubGlobal("fetch", fetchMock);
+    await Promise.allSettled([sendEmailWithProvider(managedEnv(db), "owner", operation), sendEmailWithProvider(managedEnv(db), "owner", operation)]);
+    expect(db.sendAudits).toHaveLength(1);
+    expect(new Set(fetchMock.mock.calls.map((call) => call[1].headers["Idempotency-Key"])).size).toBe(1);
+    await expect(sendEmailWithProvider(managedEnv(db), "owner", operation)).resolves.toMatchObject({ providerMessageId: "one" });
+  });
+  it.each(["paused", "pending_setup"])("rejects %s managed senders before gateway dispatch", async (status) => {
+    const db = new ManagedEmailTestDb(); db.mailboxStatus = status;
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    await expect(sendEmailWithProvider(managedEnv(db), "owner", operation)).rejects.toMatchObject({ status: 503 });
+    expect(fetchMock).not.toHaveBeenCalled(); expect(db.sendAudits).toHaveLength(0);
+  });
+  it("gates non-mailbox workflows without durable operation identity", async () => {
+    const db = new ManagedEmailTestDb(); const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    await expect(sendEmailWithProvider(managedEnv(db), "owner", { ...operation, operationId: undefined })).rejects.toMatchObject({ status: 409 });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
@@ -615,6 +698,8 @@ class ManagedEmailTestDb {
   readonly providerRows: Array<Record<string, unknown>> = [];
   readonly sendAudits: Array<Record<string, any>> = [];
   providerRowsRead = false;
+  mailboxStatus = "active";
+  failNextAuditCompletion = false;
 
   constructor(
     readonly mailboxAlias = "owner",
@@ -662,6 +747,9 @@ class ManagedEmailTestStatement {
     if (this.sql.includes("FROM managed_email_inbound_deliveries")) {
       return (this.db.deliveries.get(String(this.values[0])) || null) as T | null;
     }
+    if (this.sql.includes("FROM email_send_audit") && this.sql.includes("WHERE id = ?")) {
+      return (this.db.sendAudits.find((audit) => audit.id === this.values[0] && audit.user_id === this.values[1]) || null) as T | null;
+    }
     if (this.sql.includes("FROM email_send_audit")) {
       const row = this.db.sendAudits.find(
         (audit) =>
@@ -676,7 +764,7 @@ class ManagedEmailTestStatement {
     }
     if (this.sql.includes("FROM mailbox_aliases")) {
       if (this.sql.includes("SELECT alias_local_part")) {
-        return { alias_local_part: this.db.mailboxAlias } as T;
+        return (this.sql.includes("status = 'active'") && this.db.mailboxStatus !== "active" ? null : { alias_local_part: this.db.mailboxAlias }) as T | null;
       }
       return {
         id: "mailbox-1",
@@ -741,6 +829,10 @@ class ManagedEmailTestStatement {
         body_sha256: String(this.values[6]),
       });
     } else if (this.sql.includes("INSERT INTO email_send_audit")) {
+      if (this.db.sendAudits.some((audit) => audit.id === this.values[0])) {
+        if (this.sql.includes("ON CONFLICT(id) DO NOTHING")) return { success: true, meta: { changes: 0 } };
+        throw new Error("UNIQUE constraint failed");
+      }
       this.db.sendAudits.push({
         id: this.values[0],
         user_id: this.values[1],
@@ -762,6 +854,10 @@ class ManagedEmailTestStatement {
       this.sql.includes("UPDATE email_send_audit") &&
       this.sql.includes("provider_message_id = ?")
     ) {
+      if (this.db.failNextAuditCompletion) {
+        this.db.failNextAuditCompletion = false;
+        throw new Error("D1 completion response lost");
+      }
       const audit = this.db.sendAudits.find((row) => row.id === this.values[9]);
       if (!audit || audit.status !== "pending") {
         return { success: true, meta: { changes: 0 } };
