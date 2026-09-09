@@ -4466,8 +4466,10 @@ async function fetchSocialProfile(
   }
 
   const response = await fetcher(
-    `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}/me?fields=user_id,username,profile_picture_url`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
+    `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}/me?${new URLSearchParams({
+      fields: "user_id,username,profile_picture_url",
+      access_token: accessToken,
+    })}`,
   );
   const body = await readJsonResponse<{
     user_id?: string;

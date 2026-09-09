@@ -2616,16 +2616,15 @@ function currentQueryParam(name: string): string | null {
             Load demo
           </Button>
           <Button
-            color="ghost"
+            :color="activeAccounts.length === 0 ? 'primary' : 'outline'"
             shape="soft"
             size="compact"
-            icon-only
             type="button"
-            aria-label="Manage social accounts"
-            title="Social accounts"
+            :disabled="initializing || !currentSite"
             @click="showAccounts = true"
           >
-            <UiIcon name="Settings" :size="18" aria-hidden="true" />
+            <UiIcon name="Link" :size="18" aria-hidden="true" />
+            {{ activeAccounts.length === 0 ? 'Connect accounts' : 'Social accounts' }}
           </Button>
           <Button
             color="ghost"
@@ -2945,12 +2944,12 @@ function currentQueryParam(name: string): string | null {
                 <Button color="neutral" shape="soft" size="compact" type="button" :disabled="saving || scheduling || !canOpenSchedule" @click="openSchedule">
                   <template #icon>
                     <UiIcon
-                      :name="publicationIsYouTubeOnly ? 'Send' : 'CalendarClock'"
+                      :name="canSchedule ? 'CalendarClock' : 'Send'"
                       :size="16"
                       aria-hidden="true"
                     />
                   </template>
-                  {{ publicationIsYouTubeOnly ? 'Upload' : 'Schedule' }}
+                  {{ publicationIsYouTubeOnly ? 'Upload' : canSchedule ? 'Schedule' : 'Publish' }}
                 </Button>
                 <Button
                   v-if="publishingCheckIssueCount"

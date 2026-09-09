@@ -236,7 +236,7 @@ describe("SocialPage", () => {
     expect(wrapper.find(".social-toolbar__search").exists()).toBe(false);
     expect(wrapper.find("[role='search']").exists()).toBe(false);
     expect(wrapper.get(".workspace-tabs").text()).toContain("Drafts");
-    wrapper.get("[aria-label='Manage social accounts']");
+    expect(wrapper.get(".social-toolbar").text()).toContain("Social accounts");
     wrapper.get("[aria-label='New Post']");
     expect(wrapper.findAll(".post-source-group")).toHaveLength(0);
     expect(wrapper.findAll(".post-tags")).toHaveLength(0);
@@ -1662,10 +1662,10 @@ describe("SocialPage", () => {
     expect(wrapper.text()).not.toContain("Shared edits replace copy and media");
     expect(wrapper.find("[aria-label^='Review publishing checks']").exists()).toBe(false);
     expect(wrapper.get(".editor-actions").text()).not.toContain("Post now");
-    expect(wrapper.get(".editor-actions").text()).toContain("Schedule");
+    expect(wrapper.get(".editor-actions").text()).toContain("Publish");
     expect(wrapper.get(".editor-actions").text()).not.toContain("Send to TikTok");
     const scheduleButton = wrapper.findAll(".editor-actions button")
-      .find((button) => button.text().trim() === "Schedule");
+      .find((button) => button.text().trim() === "Publish");
     expect(scheduleButton?.attributes("disabled")).toBeUndefined();
     expect(wrapper.findAll(".social-account-avatar__image").length).toBeGreaterThan(0);
 
@@ -1841,7 +1841,7 @@ describe("SocialPage", () => {
       .toContain("TikTok delivery failed");
     expect(wrapper.get(".delivery-error-banner").text()).toContain(failedMessage);
     const schedule = wrapper.findAll(".editor-actions button")
-      .find((button) => button.text().trim() === "Schedule");
+      .find((button) => button.text().trim() === "Publish");
     expect(schedule?.attributes("disabled")).toBeUndefined();
     await schedule!.trigger("click");
     const postNow = wrapper.findAll(".social-schedule-dialog button")
@@ -1907,7 +1907,7 @@ describe("SocialPage", () => {
 
     expect(wrapper.find(".row-status").exists()).toBe(false);
     const schedule = wrapper.findAll(".editor-actions button")
-      .find((button) => button.text().trim() === "Schedule");
+      .find((button) => button.text().trim() === "Publish");
     expect(schedule?.attributes("disabled")).toBeDefined();
     expect(wrapper.findAll(".editor-actions button")
       .some((button) => button.text().trim() === "Post now")).toBe(false);
@@ -2140,7 +2140,7 @@ describe("SocialPage", () => {
     expect(wrapper.find("[aria-label='TikTok caption copied']").exists()).toBe(true);
 
     const schedule = wrapper.findAll(".editor-actions button").find(
-      (button) => button.text().trim() === "Schedule",
+      (button) => button.text().trim() === "Publish",
     );
     await schedule!.trigger("click");
     await flushPromises();
@@ -2204,7 +2204,7 @@ describe("SocialPage", () => {
     );
 
     const readySchedule = wrapper.findAll(".editor-actions button").find(
-      (button) => button.text().trim() === "Schedule",
+      (button) => button.text().trim() === "Publish",
     );
     await readySchedule!.trigger("click");
     await flushPromises();
@@ -2312,7 +2312,7 @@ describe("SocialPage", () => {
     await flushPromises();
 
     const schedule = wrapper.findAll(".editor-actions button").find(
-      (button) => button.text().trim() === "Schedule",
+      (button) => button.text().trim() === "Publish",
     );
     expect(schedule).toBeTruthy();
     await schedule!.trigger("click");

@@ -94,13 +94,13 @@ const oauthMessage = computed(() => {
     return "LinkedIn connected. It will now appear as a publish target.";
   }
   if (oauthConnected.value === "instagram") {
-    return "Instagram connected. It will now appear as a draft target.";
+    return "Instagram connected. It will now appear as a publish target.";
   }
   if (oauthConnected.value === "instagram_business") {
-    return "Instagram (Business) connected. It will now appear as a draft target.";
+    return "Instagram (Business) connected. It will now appear as a publish target.";
   }
   if (oauthConnected.value === "youtube") {
-    return "YouTube channel connected. Private video delivery is coming next.";
+    return "YouTube channel connected. Review visibility and audience settings before publishing.";
   }
   if (oauthConnected.value === "tiktok") {
     return "TikTok connected. Short videos can be sent as creator drafts or Direct Posts.";
@@ -112,6 +112,16 @@ const oauthErrorMessage = computed(() => {
   switch (oauthError.value) {
     case "config":
       return "This social connection is not configured on the server yet.";
+    case "x_config":
+      return "X publishing is not configured on the ME3 server yet. The server administrator needs to add the X publishing app credentials before you reconnect.";
+    case "instagram_profile_token":
+      return "Instagram rejected the access token while loading your profile. Reconnect your Instagram account and try again.";
+    case "instagram_profile_permission":
+      return "Instagram did not allow ME3 to read your professional profile. Check the app’s Instagram permissions and account access, then reconnect.";
+    case "instagram_profile_unavailable":
+      return "Instagram could not return your profile. Please try connecting again; if this continues, the server administrator can check the Instagram error code.";
+    case "instagram_profile_invalid":
+      return "Instagram did not return a professional account ID. Connect an Instagram Business or Creator account with access to the ME3 app.";
     case "token":
       return "OAuth completed, but the token exchange failed.";
     case "youtube_token_invalid_client":

@@ -115,7 +115,8 @@ describe("SocialAccountsPanel managed X connection", () => {
 
   it.each([
     ["x", "X connected."],
-    ["instagram", "Instagram connected. It will now appear as a draft target."],
+    ["instagram", "Instagram connected. It will now appear as a publish target."],
+    ["youtube", "YouTube channel connected. Review visibility and audience settings before publishing."],
     ["linkedin", "LinkedIn connected. It will now appear as a publish target."],
   ])("reports truthful capability language after connecting %s", async (platform, message) => {
     routerHarness.route.query = { social_connected: platform };
@@ -137,6 +138,25 @@ describe("SocialAccountsPanel managed X connection", () => {
       query: {},
     });
     expect(wrapper.find(".banner").exists()).toBe(false);
+  });
+
+  it.each([
+    ["x_config", "X publishing is not configured on the ME3 server yet."],
+    ["instagram_profile_token", "Instagram rejected the access token"],
+    ["instagram_profile_permission", "Instagram did not allow ME3 to read your professional profile."],
+    ["instagram_profile_unavailable", "Instagram could not return your profile."],
+    ["instagram_profile_invalid", "Instagram did not return a professional account ID."],
+  ])("explains %s connection failures without reporting success", async (error, message) => {
+    routerHarness.route.query = { social_error: error };
+    mount(SocialAccountsPanel, {
+      props: { siteId: "site-1" },
+      global: { stubs: { UiIcon: true } },
+    });
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    await flushPromises();
+    expect(toastHarness.error).toHaveBeenCalledWith(expect.stringContaining(message));
+    expect(toastHarness.success).not.toHaveBeenCalled();
+    expect(routerHarness.replace).toHaveBeenCalledWith({ path: "/social", query: {} });
   });
 
   it("keeps hosted connection choices concise", async () => {
