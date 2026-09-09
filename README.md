@@ -33,7 +33,7 @@ Note: Cloudflare hosting is free to start; some features require a $5/month plan
 
 ### 🔄 Update ME3
 
-In a Deploy-to-Cloudflare copied repository, run **Actions → Update ME3 → Run workflow**. The updater preserves that installation's `wrangler.toml`, including its Cloudflare resource IDs and bindings. With Cloudflare credentials configured as GitHub secrets, the workflow applies D1 migrations before it pushes or deploys the updated Worker and stops if migration fails. Without those secrets, keep the Cloudflare Workers Builds deploy command set to `pnpm deploy`; that command also applies migrations before `wrangler deploy` and stops on failure.
+In a Deploy-to-Cloudflare copied repository, run **Actions → Update ME3 → Run workflow**. The updater preserves that installation's `wrangler.toml`, including its Cloudflare resource IDs and bindings. With Cloudflare credentials configured as GitHub secrets, the workflow applies D1 migrations before it pushes or deploys the updated Worker and stops if migration fails. Without those secrets, keep the Cloudflare Workers Builds deploy command set to `pnpm run deploy`; that command also applies migrations before `wrangler deploy` and stops on failure. The in-app installer uses a temporary Cloudflare token for the first deployment, so configure your own deployment connection for later updates.
 
 ### 📜 Docs
 

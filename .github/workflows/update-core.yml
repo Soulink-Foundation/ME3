@@ -140,4 +140,4 @@ jobs:
       - name: Cloudflare deploy skipped
         if: steps.changes.outputs.changed == 'true' && (env.CLOUDFLARE_ACCOUNT_ID == '' || env.CLOUDFLARE_API_TOKEN == '')
         run: |
-          echo "GitHub Cloudflare secrets are not set. Cloudflare Workers Builds must use pnpm deploy so migrations run before deployment."
+          echo "GitHub Cloudflare secrets are not set. Cloudflare Workers Builds must use pnpm run deploy so migrations run before deployment."
