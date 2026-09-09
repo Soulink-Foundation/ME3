@@ -2354,6 +2354,27 @@ describe("Core chat native context", () => {
     expect(env.state.persistedMessages.map((message) => message.role)).toEqual(["user"]);
   });
 
+  it.each([
+    "Create a task called Finish setup in Personal.",
+    "This is a fresh-install test. Add a task called Check setup to Personal.",
+    "Can you create a task to review first time onboarding?",
+  ])("keeps task tools available for setup actions: %s", async (messageText) => {
+    const aiRun = vi.fn(async (_model: string, _input: unknown) => ({ response: "Ready to help." }));
+    await dispatchAgentSandboxTurn(
+      { ...createEnv(), AI: { run: aiRun } } as never,
+      createStorage(),
+      dispatchInput(messageText),
+    );
+    const modelInput = aiRun.mock.calls[0]?.[1] as {
+      messages: Array<{ role: string; content: string }>;
+      tools?: Array<{ function: { name: string } }>;
+    };
+    expect(modelInput.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ function: expect.objectContaining({ name: "core_mission_task_create" }) }),
+    ]));
+    expect(modelInput.messages[0]?.content).not.toContain("ME3 first-run/setup orientation mode:");
+  });
+
   it("keeps setup and capability exploration prompts in the model path", async () => {
     const aiRun = vi.fn(async (_model: string, _input: unknown) => ({
       response:

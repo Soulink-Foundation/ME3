@@ -3224,6 +3224,12 @@ function buildCoreConversationDecision(
 }
 
 function isCoreChatCapabilityExplorationRequest(messageText: string): boolean {
+  // An action can mention setup or testing without being a capabilities tour.
+  // Keep tools available for direct requests, including after an introductory
+  // sentence, while leaving questions such as "how do I create..." as guidance.
+  if (/(?:^|[.!?]\s+)(?:(?:can|could|would) you\s+)?(?:please\s+)?(?:add|create|save|read|list|find|search|update|edit|move|archive|delete|remind|draft|send|schedule|publish|unpublish)\b/i.test(messageText.trim())) {
+    return false;
+  }
   const normalized = messageText.toLowerCase();
   const toolIndex = normalized.search(/\btools?\b/);
   const actionIndex = ["use ", "using ", "call ", "run "]
