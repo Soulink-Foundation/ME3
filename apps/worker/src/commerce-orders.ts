@@ -5,7 +5,7 @@ import {
   loadSiteProfileForCommerce,
   normalizeEmail,
   normalizeLongText,
-  normalizeSameOriginReturnUrl,
+  normalizeSiteCheckoutReturnUrl,
   normalizeShortText,
 } from "./booking";
 import {
@@ -188,9 +188,11 @@ export async function createProductCheckout(
     )
     .run();
 
-  const returnUrl = normalizeSameOriginReturnUrl(
+  const returnUrl = normalizeSiteCheckoutReturnUrl(
     body.returnUrl,
-    new URL(requestUrl).origin,
+    requestUrl,
+    env,
+    site,
   );
   try {
     const checkout = stripe

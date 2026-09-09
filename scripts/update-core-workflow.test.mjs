@@ -49,6 +49,22 @@ test("a failed migration stops the deployment gate", () => {
   }
 });
 
+test("an unchanged fresh copy builds and deploys when installation credentials exist", () => {
+  const build = getStep("Build current release for deployment");
+  assert.match(build, /changed != 'true'/);
+  assert.match(build, /pnpm install --frozen-lockfile/);
+  assert.match(build, /pnpm build/);
+  for (const name of ["Apply database migrations", "Deploy to Cloudflare"]) {
+    const step = getStep(name);
+    const condition = step.match(/if: (.*)/)?.[1];
+    assert.equal(condition, "env.CLOUDFLARE_ACCOUNT_ID != '' && env.CLOUDFLARE_API_TOKEN != ''");
+    assert.ok(workflow.indexOf(build) < workflow.indexOf(step));
+  }
+  // An update-only run may never install packages, so setup-node must not try
+  // saving a pnpm store that does not exist during post-job cleanup.
+  assert.doesNotMatch(getStep("Setup Node.js"), /cache: pnpm/);
+});
+
 function getStep(name) {
   const start = workflow.indexOf(`      - name: ${name}\n`);
   assert.notEqual(start, -1, `Missing workflow step: ${name}`);

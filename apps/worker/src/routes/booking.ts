@@ -16,7 +16,7 @@ import {
   normalizeBookingAmount,
   normalizeEmail,
   normalizeLongText,
-  normalizeSameOriginReturnUrl,
+  normalizeSiteCheckoutReturnUrl,
   normalizeShortText,
   releaseBookingHold,
   resolveBookingSlot,
@@ -418,8 +418,7 @@ export function registerBookingRoutes(app: AppHono) {
       expiresAt: holdExpiresAt,
     });
 
-    const requestOrigin = new URL(c.req.url).origin;
-    const returnUrl = normalizeSameOriginReturnUrl(body.returnUrl, requestOrigin);
+    const returnUrl = normalizeSiteCheckoutReturnUrl(body.returnUrl, c.req.url, c.env, site);
     const successUrl = appendQueryParams(returnUrl, {
       booking: "success",
       session_id: "{CHECKOUT_SESSION_ID}",

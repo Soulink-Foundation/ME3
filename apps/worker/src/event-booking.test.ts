@@ -118,6 +118,7 @@ describe("event booking capacity", () => {
   it("counts active checkout holds so a sold-out occurrence cannot be oversubscribed", async () => {
     const offer = resolveEventBookingOffer(eventBookIntent(), "class", "movement-class")!;
     const occurrence = resolveEventOccurrence(offer, "2026-09-07")!;
+    const expiresAt = new Date(Date.now() + 60 * 60_000).toISOString();
     const results = await Promise.all([
       createEventBookingHold(env, {
         siteId: site.id,
@@ -125,7 +126,7 @@ describe("event booking capacity", () => {
         occurrence,
         quantity: 2,
         holdToken: "hold-a",
-        expiresAt: "2026-09-07T16:30:00.000Z",
+        expiresAt,
       }),
       createEventBookingHold(env, {
         siteId: site.id,
@@ -133,7 +134,7 @@ describe("event booking capacity", () => {
         occurrence,
         quantity: 1,
         holdToken: "hold-b",
-        expiresAt: "2026-09-07T16:30:00.000Z",
+        expiresAt,
       }),
     ]);
     expect(results.filter(Boolean)).toHaveLength(1);

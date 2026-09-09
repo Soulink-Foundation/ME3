@@ -43,7 +43,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
 
       - name: Configure Git author
         run: |
@@ -96,10 +95,20 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # A freshly copied repository is already at the current release. The
+      # updater exits early in that case, but the first deployment still needs
+      # dependencies and web assets.
+      - name: Build current release for deployment
+        if: steps.changes.outputs.changed != 'true' && env.CLOUDFLARE_ACCOUNT_ID != '' && env.CLOUDFLARE_API_TOKEN != ''
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm build
+
       # Pushing main can trigger Cloudflare Workers Builds, so migrations must
       # succeed before the update commit reaches the copied repository.
       - name: Apply database migrations
-        if: steps.changes.outputs.changed == 'true' && env.CLOUDFLARE_ACCOUNT_ID != '' && env.CLOUDFLARE_API_TOKEN != ''
+        if: env.CLOUDFLARE_ACCOUNT_ID != '' && env.CLOUDFLARE_API_TOKEN != ''
         run: |
           set -euo pipefail
 
@@ -122,7 +131,7 @@ jobs:
         run: echo "ME3 is already up to date."
 
       - name: Deploy to Cloudflare
-        if: steps.changes.outputs.changed == 'true' && env.CLOUDFLARE_ACCOUNT_ID != '' && env.CLOUDFLARE_API_TOKEN != ''
+        if: env.CLOUDFLARE_ACCOUNT_ID != '' && env.CLOUDFLARE_API_TOKEN != ''
         run: |
           set -euo pipefail
 

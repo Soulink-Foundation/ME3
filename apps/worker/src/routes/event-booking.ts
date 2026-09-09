@@ -7,7 +7,7 @@ import {
   normalizeBookingAmount,
   normalizeEmail,
   normalizeLongText,
-  normalizeSameOriginReturnUrl,
+  normalizeSiteCheckoutReturnUrl,
   normalizeShortText,
   type CoreBookIntent,
 } from "../booking";
@@ -186,8 +186,7 @@ export function registerEventBookingRoutes(app: AppHono) {
         return c.json({ error: "There are not enough spaces left for that booking" }, 409);
       }
 
-      const requestOrigin = new URL(c.req.url).origin;
-      const baseReturnUrl = normalizeSameOriginReturnUrl(body.returnUrl, requestOrigin);
+      const baseReturnUrl = normalizeSiteCheckoutReturnUrl(body.returnUrl, c.req.url, c.env, context.site);
       const pendingReturnUrl = appendQueryParams(baseReturnUrl, {
         event_booking_pending: `${context.offer.bookingType}:${context.offer.id}`,
       });

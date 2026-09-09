@@ -2,6 +2,7 @@ import Stripe from "stripe";
 import { getUtcMsForLocalTime, resolveTimeZone } from "./calendar";
 import { scheduleBookingRemindersForBooking } from "./booking-reminders";
 import { getStripeSecretKey } from "./commerce-settings";
+import { getPublicSiteOrigin } from "./sites";
 import type { Me3SiteProfile } from "@me3-core/site-renderer";
 import type { DbBooking, DbSite, Env } from "./types";
 
@@ -804,15 +805,31 @@ export async function confirmBookingHold(
     .run();
 }
 
-export function normalizeSameOriginReturnUrl(value: unknown, fallbackOrigin: string): string {
-  if (typeof value !== "string") return fallbackOrigin;
+export function normalizeSiteCheckoutReturnUrl(
+  value: unknown,
+  requestUrl: string,
+  env: Env,
+  site: Pick<DbSite, "custom_domain" | "site_role" | "username">,
+): string {
+  const requestOrigin = new URL(requestUrl).origin;
+  const publicOrigin = getPublicSiteOrigin(env, site);
+  const publicPath = site.site_role === "organization"
+    ? `/site/${encodeURIComponent(site.username)}/`
+    : "/me/";
+  const fallback = publicOrigin ? `${publicOrigin}/` : `${requestOrigin}${publicPath}`;
+  if (typeof value !== "string") return fallback;
   try {
     const parsed = new URL(value);
-    if (parsed.origin !== fallbackOrigin) return fallbackOrigin;
+    // A managed custom domain is proxied to the installation. Trust the site's
+    // configured origin, never a client-supplied forwarded-host header.
+    if (
+      (parsed.origin !== requestOrigin && parsed.origin !== publicOrigin) ||
+      parsed.username || parsed.password
+    ) return fallback;
     parsed.hash = "";
     return parsed.toString();
   } catch {
-    return fallbackOrigin;
+    return fallback;
   }
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createConfirmedOneToOneBooking,
+  normalizeSiteCheckoutReturnUrl,
   resolvePaidOneToOneOffer,
   serializePublicBookingOffer,
   type CoreBookIntent,
@@ -36,6 +37,41 @@ const manualOffer: ResolvedOneToOneBookingOffer = {
     paymentInstructions: "Pay at https://pay.example/session",
   },
 };
+
+describe("public checkout returns", () => {
+  const requestUrl = "https://owner.me3.app/api/book/owner/checkout-session";
+  const publicSite = { ...site, custom_domain: "www.owner.example" };
+  const env = {} as Env;
+
+  it("preserves the public page and campaign after a managed domain proxy", () => {
+    expect(normalizeSiteCheckoutReturnUrl(
+      "https://www.owner.example/offers?campaign=beta#booking", requestUrl, env, publicSite,
+    )).toBe("https://www.owner.example/offers?campaign=beta");
+  });
+
+  it.each([
+    "https://evil.example/", "https://www.owner.example.evil.test/",
+    "https://guest:secret@www.owner.example/", "http://www.owner.example/",
+    "//evil.example/", "not-a-url", undefined,
+  ])("rejects an untrusted or malformed return URL: %s", (value) => {
+    expect(normalizeSiteCheckoutReturnUrl(value, requestUrl, env, publicSite))
+      .toBe("https://www.owner.example/");
+  });
+
+  it("retains a public preview on the installation origin", () => {
+    expect(normalizeSiteCheckoutReturnUrl(
+      "https://owner.me3.app/me/offers?campaign=preview", requestUrl, env, site,
+    )).toBe("https://owner.me3.app/me/offers?campaign=preview");
+  });
+
+  it("falls back to a public profile or organization page instead of the private app", () => {
+    expect(normalizeSiteCheckoutReturnUrl(undefined, requestUrl, env, site))
+      .toBe("https://owner.me3.app/me/");
+    expect(normalizeSiteCheckoutReturnUrl(undefined, requestUrl, env, {
+      ...site, site_role: "organization", username: "studio",
+    })).toBe("https://owner.me3.app/site/studio/");
+  });
+});
 
 describe("manual booking payments", () => {
   it("does not expose payment instructions or send manual offers to checkout", () => {
